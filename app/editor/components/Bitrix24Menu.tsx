@@ -1,5 +1,6 @@
 import * as React from "react";
 import type { TFunction } from "i18next";
+import type { EditorView } from "prosemirror-view";
 import type { MenuItem } from "@shared/editor/types";
 import useRequest from "~/hooks/useRequest";
 import { client } from "~/utils/ApiClient";
@@ -11,12 +12,13 @@ import SuggestionsMenuItem from "./SuggestionsMenuItem";
 /**
  * Items rendered in the Bitrix24 picker. They are not real ProseMirror nodes —
  * on selection the menu inserts the entity's canonical URL into the document
- * as plain text, which the unfurl pipeline (see plugins/bitrix24/server/unfurl.ts)
- * subsequently resolves to a rich card on save / re-render.
+ * as a clickable link. Outline's editor matches the URL against the Bitrix24
+ * EmbedDescriptor on next render and swaps the link for an inline card.
  *
- * `name` stays `"noop"` so SuggestionsMenu's default `insertNode` branch is
- * taken (no editor command is dispatched); we handle insertion ourselves in
- * `onSelect` to gain direct access to the editor view.
+ * `name` is `"noop"` so SuggestionsMenu does NOT try to look up an editor
+ * command for us — and crucially still calls `handleClearSearch` (removes
+ * the `:b query` text) BEFORE invoking `onClick`. We rely on that order to
+ * append a clean URL without leaking the trigger characters.
  */
 interface Bitrix24Item extends MenuItem {
   /** Canonical Bitrix24 URL to insert. */
@@ -58,11 +60,32 @@ const SECTIONS: Array<{
 ];
 
 /**
+ * Insert a URL at the current caret position and mark it as a link. We do
+ * this in one transaction so undo treats it as a single step. The link mark
+ * makes the URL clickable; on next render the embed system swaps it for an
+ * inline card if the URL matches the Bitrix24 EmbedDescriptor.
+ *
+ * @param view active ProseMirror editor view.
+ * @param url URL to insert.
+ */
+function insertUrlAsLink(view: EditorView, url: string): void {
+  const { state, dispatch } = view;
+  const { from } = state.selection;
+  const tr = state.tr.insertText(url, from);
+  const linkMark = state.schema.marks.link;
+  if (linkMark) {
+    tr.addMark(from, from + url.length, linkMark.create({ href: url }));
+  }
+  dispatch(tr);
+}
+
+/**
  * Slash-style picker for Bitrix24 entities. Triggered by `:b ` in the editor.
  * On every query change makes parallel calls to `/api/bitrix24.search` for
  * every entity type and concatenates the results into one menu, grouped by
  * section. Selecting a row inserts the entity's canonical Bitrix24 URL at the
- * caret; on next render the unfurl pipeline replaces it with a rich card.
+ * caret as a clickable link; the Bitrix24 EmbedDescriptor matches the URL on
+ * re-render and replaces it with a rich card.
  *
  * @param props standard SuggestionsMenu props (trigger, search query, etc.).
  */
@@ -94,19 +117,24 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
       const collected: Bitrix24Item[] = [];
       for (const { section, hits } of lookups) {
         for (const h of hits) {
+          // Bind `url` into the closure so each row's onClick inserts the
+          // correct entity. onClick is invoked by SuggestionsMenu AFTER
+          // handleClearSearch has stripped the `:b query` trigger text.
+          const url = h.url;
           collected.push({
             name: "noop",
             title: h.title,
             subtitle: h.subtitle,
             section,
-            url: h.url,
-            attrs: { id: h.id, type: h.type, url: h.url },
+            url,
+            onClick: () => insertUrlAsLink(view, url),
+            attrs: { id: h.id, type: h.type, url },
           });
         }
       }
       setItems(collected);
       setLoaded(true);
-    }, [search])
+    }, [search, view])
   );
 
   React.useEffect(() => {
@@ -114,17 +142,6 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
       void request();
     }
   }, [request, isActive]);
-
-  const handleSelect = React.useCallback(
-    (item: Bitrix24Item) => {
-      // Insert the URL at the caret. The Suggestions plugin trims the trigger
-      // text (":b …") via its own clear-search call before onSelect fires, so
-      // we can append the URL cleanly without overwriting query characters.
-      const { state, dispatch } = view;
-      dispatch(state.tr.insertText(item.url));
-    },
-    [view]
-  );
 
   const renderMenuItem = React.useCallback(
     (item: Bitrix24Item, _index: number, options) => (
@@ -149,7 +166,6 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
       isActive={isActive}
       filterable={false}
       search={search}
-      onSelect={handleSelect}
       renderMenuItem={renderMenuItem}
       items={items}
     />

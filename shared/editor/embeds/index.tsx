@@ -8,6 +8,7 @@ import type { IntegrationSettings, IntegrationType } from "../../types";
 import { urlRegex } from "../../utils/urls";
 import Image from "../components/Img";
 import Berrycast from "./Berrycast";
+import Bitrix24 from "./Bitrix24";
 import Diagrams from "./Diagrams";
 import Dropbox from "./Dropbox";
 import Gist from "./Gist";
@@ -145,6 +146,22 @@ const embeds: EmbedDescriptor[] = [
     ],
     transformMatch: (matches: RegExpMatchArray) =>
       `https://airtable.com/embed/${matches[1] ?? ""}${matches[2]}`,
+  }),
+  // Bitrix24 — rich inline cards for projects, tasks, deals, contacts,
+  // companies, users and chats. Card data is fetched via `/api/urls.unfurl`
+  // from the per-team plugin, see plugins/bitrix24/server/unfurl.ts.
+  new EmbedDescriptor({
+    id: "bitrix24",
+    title: "Bitrix24",
+    keywords: "bitrix24 битрикс24 project task deal chat crm",
+    icon: <Img src="/images/link.png" alt="Bitrix24" />,
+    // Any cloud Bitrix24 subdomain (.ru/.com/.de/.eu/.kz/.by/.fr/.it/.es/.pl/.ua/…)
+    // hitting one of our supported entity paths. Keeps the embed plugin-domain
+    // agnostic so a different portal can be configured without code changes.
+    regexMatch: [
+      /^https?:\/\/[a-z0-9-]+\.bitrix24\.[a-z]{2,4}\/(workgroups\/group\/\d+\/tasks\/task\/view\/\d+|workgroups\/group\/\d+|company\/personal\/user\/\d+\/tasks\/task\/view\/\d+|company\/personal\/user\/\d+|crm\/(deal|contact|company)\/details\/\d+|online|im\/messenger)\/?/i,
+    ],
+    component: Bitrix24,
   }),
   new EmbedDescriptor({
     id: "berrycast",

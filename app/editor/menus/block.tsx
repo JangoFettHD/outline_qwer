@@ -106,6 +106,15 @@ export default function blockMenuItems(
       name: "separator",
     },
     {
+      // Opens the Bitrix24 entity picker (same widget as the `:b` trigger).
+      // Wired via Bitrix24MenuExtension.commands() — flipping `state.open`
+      // and resetting the query for a fresh start.
+      name: "bitrix24Picker",
+      title: t("Bitrix24"),
+      icon: <Img src="/images/link.png" alt="Bitrix24" />,
+      keywords: "bitrix24 битрикс битрикс24 project task deal chat crm проект задача сделка чат",
+    },
+    {
       name: "image",
       title: t("Image"),
       icon: <ImageIcon />,

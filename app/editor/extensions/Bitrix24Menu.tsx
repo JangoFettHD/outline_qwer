@@ -4,17 +4,19 @@ import Suggestion from "~/editor/extensions/Suggestion";
 import Bitrix24Menu from "../components/Bitrix24Menu";
 
 /**
- * Editor extension that opens a Bitrix24 entity picker when the user types
- * `:b` followed by a query. The picker hits `/api/bitrix24.search` and on
- * selection inserts the entity's URL — which the server-side unfurl
- * (see plugins/bitrix24/server/unfurl.ts) later resolves to a rich card.
+ * Editor extension that opens a Bitrix24 entity picker. There are two ways
+ * for the user to invoke it:
  *
- * Trigger choice: `:b` is short, easy to type, and doesn't collide with the
- * existing triggers `@` (mentions), `:` (emoji), or `/` (block menu —
- * `:` followed by a space inside `:b ` is treated as a normal character by
- * the emoji menu's openRegex because the second character is `b`, not a word
- * char, but we still require a space-or-character after `:b` to avoid
- * accidentally opening on a stray colon).
+ *   1. `:b <query>`  — typing the trigger inline (handled by the Suggestion
+ *                      regex base class).
+ *   2. `/bitrix24`   — picking the entry from the slash block menu, which
+ *                      dispatches the `bitrix24Picker` command registered
+ *                      below. The command flips `state.open = true` and the
+ *                      widget renders just like the inline trigger.
+ *
+ * Trigger choice: `:b` is short and doesn't collide with `@` (mentions),
+ * `:` (emoji — needs a word char immediately after the colon, so `:b ` is
+ * not a valid emoji shortcode), or `/` (block menu).
  */
 export default class Bitrix24MenuExtension extends Suggestion {
   get defaultOptions() {
@@ -28,6 +30,25 @@ export default class Bitrix24MenuExtension extends Suggestion {
 
   get name() {
     return "bitrix24-menu";
+  }
+
+  /**
+   * Editor command surface. `bitrix24Picker` opens the picker without
+   * inserting any text — used by the slash block menu entry so the user
+   * doesn't have to memorise the `:b` trigger.
+   */
+  commands() {
+    return {
+      bitrix24Picker:
+        () =>
+        (): boolean => {
+          action(() => {
+            this.state.open = true;
+            this.state.query = "";
+          })();
+          return true;
+        },
+    };
   }
 
   widget = ({ rtl }: WidgetProps) => (
