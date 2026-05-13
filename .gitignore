@@ -1,16 +1,22 @@
 dist
 build
 node_modules/*
+# Environment and local overrides (secrets / machine-specific)
 .env
 .env.local
+.env.*.local
 .env.production
+.env.staging
+.envrc
 .log
 .vscode/*
 npm-debug.log
 stats.json
 .DS_Store
 data/*
+tmp/
 .idea
+.quick-start-state
 *.pem
 *.key
 *.cert
