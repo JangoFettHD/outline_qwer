@@ -27,6 +27,8 @@ const SearchSchema = z.object({
       "deal",
       "contact",
       "company",
+      "lead",
+      "event",
     ]),
     query: z.string().max(120).default(""),
     limit: z.number().int().min(1).max(25).default(10),
@@ -127,6 +129,10 @@ async function searchByType(
       return searchContacts(user, q, limit);
     case "company":
       return searchCompanies(user, q, limit);
+    case "lead":
+      return searchLeads(user, q, limit);
+    case "event":
+      return searchEvents(user, q, limit);
   }
 }
 
@@ -351,6 +357,90 @@ async function searchCompanies(
       subtitle: [c.INDUSTRY, c.COMPANY_TYPE].filter(Boolean).join(" · "),
     })
   );
+}
+
+async function searchLeads(
+  actor: User,
+  q: string,
+  limit: number
+): Promise<SearchHit[]> {
+  const params: Record<string, string | number> = {
+    "select[]": "ID,TITLE,NAME,LAST_NAME,STATUS_ID,COMPANY_TITLE",
+    "order[ID]": "DESC",
+    start: 0,
+  };
+  if (q) {
+    params["filter[%TITLE]"] = q;
+  }
+  const list = await callRest<
+    Array<{
+      ID: string;
+      TITLE?: string;
+      NAME?: string;
+      LAST_NAME?: string;
+      STATUS_ID?: string;
+      COMPANY_TITLE?: string;
+    }>
+  >(actor, "crm.lead.list", params);
+  return (list ?? []).slice(0, limit).map((l) => {
+    const title =
+      l.TITLE ||
+      [l.NAME, l.LAST_NAME].filter(Boolean).join(" ").trim() ||
+      `Lead #${l.ID}`;
+    return hit("lead", String(l.ID), title, {
+      subtitle: [l.STATUS_ID, l.COMPANY_TITLE].filter(Boolean).join(" · "),
+    });
+  });
+}
+
+async function searchEvents(
+  actor: User,
+  q: string,
+  limit: number
+): Promise<SearchHit[]> {
+  // `calendar.event.get` returns events for the current user in a date range.
+  // Without filtering this can be huge — narrow to the next 60 days so the
+  // picker stays responsive even on a busy calendar.
+  const now = new Date();
+  const horizon = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+  const list = await callRest<
+    Array<{
+      ID: string | number;
+      NAME?: string;
+      DATE_FROM?: string;
+      DATE_TO?: string;
+      LOCATION?: string;
+    }>
+  >(actor, "calendar.event.get", {
+    type: "user",
+    from: now.toISOString().slice(0, 10),
+    to: horizon.toISOString().slice(0, 10),
+  });
+  const lcq = q.toLowerCase();
+  const hits: SearchHit[] = [];
+  for (const e of list ?? []) {
+    const title = e.NAME ?? `Event #${e.ID}`;
+    if (lcq && !title.toLowerCase().includes(lcq)) {
+      continue;
+    }
+    const startBadge = e.DATE_FROM
+      ? new Date(e.DATE_FROM).toLocaleString("en-GB", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+    hits.push(
+      hit("event", String(e.ID), title, {
+        subtitle: [startBadge, e.LOCATION].filter(Boolean).join(" · "),
+      })
+    );
+    if (hits.length >= limit) {
+      break;
+    }
+  }
+  return hits;
 }
 
 export default router;

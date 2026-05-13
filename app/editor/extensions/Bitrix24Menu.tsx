@@ -1,4 +1,5 @@
 import { action } from "mobx";
+import type { EditorState, Transaction } from "prosemirror-state";
 import type { WidgetProps } from "@shared/editor/lib/Extension";
 import Suggestion from "~/editor/extensions/Suggestion";
 import Bitrix24Menu from "../components/Bitrix24Menu";
@@ -33,19 +34,27 @@ export default class Bitrix24MenuExtension extends Suggestion {
   }
 
   /**
-   * Editor command surface. `bitrix24Picker` opens the picker without
-   * inserting any text — used by the slash block menu entry so the user
-   * doesn't have to memorise the `:b` trigger.
+   * Editor command surface. `bitrix24Picker` inserts the trigger text
+   * (`:b `) at the caret — used by the slash block menu entry. The
+   * Suggestion base class's InputRule then fires on the newly-inserted
+   * text and opens the picker exactly as if the user had typed `:b`.
+   *
+   * This approach (insert trigger text vs. flip `state.open` directly) is
+   * what lets users keep typing to refine the query after `/Bitrix24` —
+   * each subsequent character is captured by openRegex and pushed through
+   * to `Bitrix24Menu` as `props.search`, so the popover updates live.
    */
   commands() {
     return {
       bitrix24Picker:
         () =>
-        (): boolean => {
-          action(() => {
-            this.state.open = true;
-            this.state.query = "";
-          })();
+        (
+          state: EditorState,
+          dispatch?: (tr: Transaction) => void
+        ): boolean => {
+          if (dispatch) {
+            dispatch(state.tr.insertText(":b "));
+          }
           return true;
         },
     };

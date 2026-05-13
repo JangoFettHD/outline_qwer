@@ -53,11 +53,16 @@ const SECTIONS: Array<{
   { type: "workgroup", section: ({ t }) => t("Projects") },
   { type: "task", section: ({ t }) => t("Tasks") },
   { type: "deal", section: ({ t }) => t("Deals") },
+  { type: "lead", section: ({ t }) => t("Leads") },
+  { type: "event", section: ({ t }) => t("Events") },
   { type: "chat", section: ({ t }) => t("Chats") },
   { type: "user", section: ({ t }) => t("Users") },
   { type: "contact", section: ({ t }) => t("Contacts") },
   { type: "company", section: ({ t }) => t("Companies") },
 ];
+
+/** Time to wait after the last keystroke before sending a new search. */
+const DEBOUNCE_MS = 200;
 
 /**
  * Insert a URL at the current caret position and mark it as a link. We do
@@ -80,22 +85,36 @@ function insertUrlAsLink(view: EditorView, url: string): void {
 }
 
 /**
- * Slash-style picker for Bitrix24 entities. Triggered by `:b ` in the editor.
- * On every query change makes parallel calls to `/api/bitrix24.search` for
- * every entity type and concatenates the results into one menu, grouped by
- * section. Selecting a row inserts the entity's canonical Bitrix24 URL at the
- * caret as a clickable link; the Bitrix24 EmbedDescriptor matches the URL on
- * re-render and replaces it with a rich card.
+ * Slash-style picker for Bitrix24 entities.
  *
- * @param props standard SuggestionsMenu props (trigger, search query, etc.).
+ * Entry points:
+ *   - `:b <query>` typed inline in the editor.
+ *   - `/Bitrix24` in the block menu — the `bitrix24Picker` editor command
+ *     inserts `:b ` for the user so this same picker opens.
+ *
+ * Both entry points feed the live `:b <query>` text into `props.search`, so
+ * the user can refine the query at any time without closing the popover —
+ * each keystroke triggers a debounced server search via
+ * `/api/bitrix24.search` fanned out across all entity types in parallel.
+ *
+ * Selecting a row inserts the entity's canonical Bitrix24 URL at the caret
+ * as a link; the Bitrix24 EmbedDescriptor matches the URL on re-render and
+ * replaces it with a rich card.
+ *
+ * @param props standard SuggestionsMenu props (trigger, search, isActive…).
  */
 function Bitrix24Menu({ search, isActive, ...rest }: Props) {
   const { view } = useEditor();
   const [items, setItems] = React.useState<Bitrix24Item[]>([]);
   const [loaded, setLoaded] = React.useState(false);
 
-  const { loading, request } = useRequest(
+  // Each fetch carries a sequence number; older completions are discarded
+  // so a slow first request can't overwrite results from a newer query.
+  const fetchSeq = React.useRef(0);
+
+  const { request } = useRequest(
     React.useCallback(async () => {
+      const seq = ++fetchSeq.current;
       const lookups = await Promise.all(
         SECTIONS.map((sec) =>
           client
@@ -113,6 +132,11 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
             .catch(() => ({ section: sec.section, hits: [] }))
         )
       );
+
+      // A newer query was fired while we were waiting — drop these results.
+      if (seq !== fetchSeq.current) {
+        return;
+      }
 
       const collected: Bitrix24Item[] = [];
       for (const { section, hits } of lookups) {
@@ -137,10 +161,15 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
     }, [search, view])
   );
 
+  // Debounce searches: each keystroke after `:b` would otherwise fire 9
+  // parallel REST calls and Bitrix24's per-method rate limits would
+  // immediately throttle us.
   React.useEffect(() => {
-    if (isActive) {
-      void request();
+    if (!isActive) {
+      return undefined;
     }
+    const handle = setTimeout(() => void request(), DEBOUNCE_MS);
+    return () => clearTimeout(handle);
   }, [request, isActive]);
 
   const renderMenuItem = React.useCallback(
@@ -154,7 +183,7 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
     []
   );
 
-  if (!loaded && loading) {
+  if (!loaded) {
     // First render: avoid flashing an empty popover. SuggestionsMenu computes
     // its height from items so showing 0 results would mis-position it.
     return null;

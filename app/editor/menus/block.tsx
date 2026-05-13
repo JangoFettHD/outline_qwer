@@ -106,13 +106,29 @@ export default function blockMenuItems(
       name: "separator",
     },
     {
-      // Opens the Bitrix24 entity picker (same widget as the `:b` trigger).
-      // Wired via Bitrix24MenuExtension.commands() — flipping `state.open`
-      // and resetting the query for a fresh start.
+      // Opens the Bitrix24 entity picker. Wired via the
+      // Bitrix24MenuExtension.bitrix24Picker editor command, which inserts
+      // `:b ` at the caret so the inline trigger handles the rest (keeps
+      // live search and typing-to-refine behaviour consistent).
       name: "bitrix24Picker",
       title: t("Bitrix24"),
       icon: <Img src="/images/link.png" alt="Bitrix24" />,
       keywords: "bitrix24 битрикс битрикс24 project task deal chat crm проект задача сделка чат",
+    },
+    {
+      // Turn the selected text into a Bitrix24 task. Title = first line of
+      // selection, description = the rest. Wired via Bitrix24PushExtension.
+      name: "bitrix24CreateTaskFromSelection",
+      title: t("Create Bitrix24 task"),
+      icon: <Img src="/images/link.png" alt="Bitrix24" />,
+      keywords: "bitrix24 битрикс задача task новая создать new",
+    },
+    {
+      // Convert each item in the enclosing checklist into a Bitrix24 task.
+      name: "bitrix24ConvertChecklist",
+      title: t("Checklist → Bitrix24 tasks"),
+      icon: <Img src="/images/link.png" alt="Bitrix24" />,
+      keywords: "bitrix24 битрикс чек-лист checklist задачи tasks convert",
     },
     {
       name: "image",

@@ -59,6 +59,10 @@ export const unfurl: UnfurlSignature = async (
       return unfurlContact(parsed, actor);
     case "company":
       return unfurlCompany(parsed, url, actor);
+    case "lead":
+      return unfurlLead(parsed, url, actor);
+    case "event":
+      return unfurlEvent(parsed, url, actor);
   }
 };
 
@@ -457,6 +461,191 @@ async function unfurlCompany(
     faviconUrl: faviconForPortal(),
     transformedUnfurl: true,
   };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CRM Lead → UnfurlResponse[Issue]
+// ────────────────────────────────────────────────────────────────────────────
+
+interface Bitrix24Lead {
+  ID: string;
+  TITLE: string;
+  NAME?: string;
+  LAST_NAME?: string;
+  STATUS_ID?: string;
+  OPPORTUNITY?: string;
+  CURRENCY_ID?: string;
+  ASSIGNED_BY_ID?: string;
+  COMPANY_TITLE?: string;
+  DATE_CREATE?: string;
+  COMMENTS?: string;
+}
+
+/**
+ * Resolve a Bitrix24 CRM lead to an Issue-style card. Surfaces the lead's
+ * status, responsible person, optional amount, and company in the subtitle.
+ *
+ * @param parsed URL descriptor with `id` = lead id.
+ * @param url canonical lead URL.
+ * @param actor caller.
+ * @returns issue unfurl payload, or `undefined`.
+ */
+async function unfurlLead(
+  parsed: ParsedBitrix24Url,
+  url: string,
+  actor: User
+): Promise<Unfurl | undefined> {
+  const lead = await callRest<Bitrix24Lead>(actor, "crm.lead.get", {
+    id: parsed.id,
+  });
+  if (!lead) {
+    return undefined;
+  }
+
+  const responsible = lead.ASSIGNED_BY_ID
+    ? (await fetchUsersByIds(actor, [Number(lead.ASSIGNED_BY_ID)]))[
+        lead.ASSIGNED_BY_ID
+      ]
+    : undefined;
+  const amount = lead.OPPORTUNITY
+    ? `${lead.OPPORTUNITY} ${lead.CURRENCY_ID ?? ""}`.trim()
+    : null;
+
+  // Lead title is sometimes the literal "TITLE", sometimes synthesised from
+  // first+last. Fall back to a "#ID" placeholder so the card is never blank.
+  const title =
+    lead.TITLE ||
+    [lead.NAME, lead.LAST_NAME].filter(Boolean).join(" ").trim() ||
+    `Lead #${lead.ID}`;
+
+  return {
+    type: UnfurlResourceType.Issue,
+    url,
+    id: String(lead.ID),
+    title,
+    description: lead.COMMENTS ?? null,
+    author: {
+      name: responsible ? formatUserName(responsible) : "—",
+      avatarUrl: responsible?.PERSONAL_PHOTO ?? "",
+    },
+    labels: [
+      ...(amount ? [{ name: amount, color: Color.blue }] : []),
+      ...(lead.COMPANY_TITLE
+        ? [{ name: lead.COMPANY_TITLE, color: Color.gray }]
+        : []),
+    ],
+    state: {
+      name: lead.STATUS_ID ?? "New",
+      color: Color.blue,
+    },
+    createdAt: lead.DATE_CREATE ?? new Date().toISOString(),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Calendar event → UnfurlResponse[Issue]
+// ────────────────────────────────────────────────────────────────────────────
+
+interface Bitrix24Event {
+  ID: string | number;
+  NAME?: string;
+  DESCRIPTION?: string;
+  CREATED_BY?: string | number;
+  DATE_FROM?: string;
+  DATE_TO?: string;
+  ACCESSIBILITY?: string;
+  IS_MEETING?: boolean;
+  LOCATION?: string;
+}
+
+/**
+ * Resolve a Bitrix24 calendar event to an Issue-style card. The event's start
+ * date is used as the state label so users can see at a glance when it
+ * happens.
+ *
+ * @param parsed URL descriptor with `id` = event id.
+ * @param url canonical event URL.
+ * @param actor caller.
+ * @returns issue unfurl payload, or `undefined`.
+ */
+async function unfurlEvent(
+  parsed: ParsedBitrix24Url,
+  url: string,
+  actor: User
+): Promise<Unfurl | undefined> {
+  // calendar.event.getbyid is the most direct method; it returns the event by
+  // its primary key regardless of which calendar it belongs to.
+  const event = await callRest<Bitrix24Event>(actor, "calendar.event.getbyid", {
+    id: parsed.id,
+  });
+  if (!event) {
+    return undefined;
+  }
+
+  const creator = event.CREATED_BY
+    ? (await fetchUsersByIds(actor, [Number(event.CREATED_BY)]))[
+        String(event.CREATED_BY)
+      ]
+    : undefined;
+
+  const dateBadge = formatEventDateBadge(event.DATE_FROM, event.DATE_TO);
+  const isPast = event.DATE_TO
+    ? new Date(event.DATE_TO).getTime() < Date.now()
+    : false;
+
+  return {
+    type: UnfurlResourceType.Issue,
+    url,
+    id: String(event.ID),
+    title: event.NAME ?? `Event #${event.ID}`,
+    description: event.DESCRIPTION ?? null,
+    author: {
+      name: creator ? formatUserName(creator) : "—",
+      avatarUrl: creator?.PERSONAL_PHOTO ?? "",
+    },
+    labels: event.LOCATION
+      ? [{ name: event.LOCATION, color: Color.gray }]
+      : [],
+    state: {
+      name: dateBadge,
+      color: isPast ? Color.gray : Color.green,
+    },
+    createdAt: event.DATE_FROM ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Format the event's start/end dates as a compact human-readable badge
+ * suitable for the `state.name` field of the Issue card.
+ *
+ * @param from ISO start date.
+ * @param to ISO end date.
+ * @returns short date range like "13 May, 10:00–11:30" or "13 May (all day)".
+ */
+function formatEventDateBadge(from?: string, to?: string): string {
+  if (!from) {
+    return "—";
+  }
+  const start = new Date(from);
+  const end = to ? new Date(to) : null;
+  const sameDay =
+    end &&
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const fmtTime = (d: Date) =>
+    d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
+  if (!end) {
+    return fmtDate(start);
+  }
+  if (sameDay) {
+    return `${fmtDate(start)}, ${fmtTime(start)}–${fmtTime(end)}`;
+  }
+  return `${fmtDate(start)} – ${fmtDate(end)}`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

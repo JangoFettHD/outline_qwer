@@ -12,7 +12,9 @@ export type Bitrix24EntityType =
   | "chat"
   | "deal"
   | "contact"
-  | "company";
+  | "company"
+  | "lead"
+  | "event";
 
 export interface ParsedBitrix24Url {
   type: Bitrix24EntityType;
@@ -78,6 +80,12 @@ const PATH_PATTERNS: Array<{
     re: /^\/crm\/company\/details\/(\d+)/,
     ids: [1],
   },
+  // /crm/lead/details/42/
+  {
+    type: "lead",
+    re: /^\/crm\/lead\/details\/(\d+)/,
+    ids: [1],
+  },
 ];
 
 /**
@@ -108,6 +116,13 @@ export function parseBitrix24Url(raw: string): ParsedBitrix24Url | null {
   const chatMatch = matchChatUrl(url);
   if (chatMatch) {
     return chatMatch;
+  }
+
+  // Calendar event URLs use a query parameter (EVENT_ID) rather than a path,
+  // so they don't fit the standard PATH_PATTERNS table either.
+  const eventMatch = matchEventUrl(url);
+  if (eventMatch) {
+    return eventMatch;
   }
 
   for (const pattern of PATH_PATTERNS) {
@@ -165,6 +180,26 @@ function matchChatUrl(url: URL): ParsedBitrix24Url | null {
 }
 
 /**
+ * Match Bitrix24 calendar event URLs. Bitrix renders events at
+ *   https://qwer.bitrix24.ru/calendar/?EVENT_ID=42
+ * (or `event=edit&EVENT_ID=42` for the edit modal). We only care about the
+ * EVENT_ID query parameter — any path under `/calendar/` is fair game.
+ *
+ * @param url parsed URL.
+ * @returns descriptor for calendar event, or `null`.
+ */
+function matchEventUrl(url: URL): ParsedBitrix24Url | null {
+  if (!url.pathname.startsWith("/calendar")) {
+    return null;
+  }
+  const id = url.searchParams.get("EVENT_ID");
+  if (!id || !/^\d+$/.test(id)) {
+    return null;
+  }
+  return { type: "event", id };
+}
+
+/**
  * Build a canonical Bitrix24 URL for an entity, used by the search API to
  * return URLs that the editor can insert and which the unfurl pipeline will
  * later resolve back to a card.
@@ -192,5 +227,9 @@ export function buildBitrix24Url(entity: ParsedBitrix24Url): string {
       return `${base}/crm/contact/details/${entity.id}/`;
     case "company":
       return `${base}/crm/company/details/${entity.id}/`;
+    case "lead":
+      return `${base}/crm/lead/details/${entity.id}/`;
+    case "event":
+      return `${base}/calendar/?EVENT_ID=${entity.id}`;
   }
 }

@@ -159,7 +159,7 @@ const embeds: EmbedDescriptor[] = [
     // hitting one of our supported entity paths. Keeps the embed plugin-domain
     // agnostic so a different portal can be configured without code changes.
     regexMatch: [
-      /^https?:\/\/[a-z0-9-]+\.bitrix24\.[a-z]{2,4}\/(workgroups\/group\/\d+\/tasks\/task\/view\/\d+|workgroups\/group\/\d+|company\/personal\/user\/\d+\/tasks\/task\/view\/\d+|company\/personal\/user\/\d+|crm\/(deal|contact|company)\/details\/\d+|online|im\/messenger)\/?/i,
+      /^https?:\/\/[a-z0-9-]+\.bitrix24\.[a-z]{2,4}\/(workgroups\/group\/\d+\/tasks\/task\/view\/\d+|workgroups\/group\/\d+|company\/personal\/user\/\d+\/tasks\/task\/view\/\d+|company\/personal\/user\/\d+|crm\/(deal|contact|company|lead)\/details\/\d+|online|im\/messenger|calendar)/i,
     ],
     component: Bitrix24,
   }),

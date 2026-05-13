@@ -630,5 +630,17 @@
   "Create your presentation": "Создать презентацию",
   "Next slide": "Следующий слайд",
   "Previous slide": "Предыдущий слайд",
-  "API keys": "API-ключи"
+  "API keys": "API-ключи",
+  "Leads": "Лиды",
+  "Events": "События",
+  "Create Bitrix24 task": "Создать задачу Bitrix24",
+  "Checklist → Bitrix24 tasks": "Чек-лист → задачи Bitrix24",
+  "Select some text first — it will become the task title.": "Сначала выделите текст — он станет заголовком задачи.",
+  "Place the cursor inside a checklist to convert its items.": "Поставьте курсор внутрь чек-листа, чтобы конвертировать его пункты.",
+  "This checklist is empty — nothing to convert.": "Чек-лист пуст — конвертировать нечего.",
+  "Could not create Bitrix24 task": "Не удалось создать задачу Bitrix24",
+  "Bitrix24 task created": "Задача Bitrix24 создана",
+  "Created {{ count }} Bitrix24 tasks": "Создано задач Bitrix24: {{ count }}",
+  "Created {{ created }} tasks, {{ failed }} failed.": "Создано задач: {{ created }}, не удалось: {{ failed }}.",
+  "Search Bitrix24…": "Поиск в Bitrix24…"
 }
