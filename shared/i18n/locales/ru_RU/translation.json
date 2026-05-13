@@ -17,7 +17,6 @@
   "Welcome": "Добро пожаловать",
   "Welcome back": "С возвращением",
   "Change email": "Сменить email",
-
   "Home": "Главная",
   "Search": "Поиск",
   "Search…": "Поиск…",
@@ -69,7 +68,6 @@
   "Logo": "Логотип",
   "Logo updated": "Логотип обновлён",
   "Tagline": "Слоган",
-
   "Collection": "Коллекция",
   "Collections": "Коллекции",
   "All collections": "Все коллекции",
@@ -147,7 +145,6 @@
   "Behavior": "Поведение",
   "Display": "Отображение",
   "Choose your preferred interface color scheme.": "Выберите цветовую схему интерфейса.",
-
   "New document": "Новый документ",
   "New collection": "Новая коллекция",
   "New template": "Новый шаблон",
@@ -161,7 +158,6 @@
   "Create document": "Создать документ",
   "Create template": "Создать шаблон",
   "Open collection": "Открыть коллекцию",
-
   "Edit": "Редактировать",
   "Edit collection": "Редактировать коллекцию",
   "Delete": "Удалить",
@@ -221,7 +217,6 @@
   "Uploading": "Загрузка",
   "Unable to upload new logo": "Не удалось загрузить новый логотип",
   "Unable to upload new profile picture": "Не удалось загрузить аватар",
-
   "Save": "Сохранить",
   "Saving…": "Сохранение…",
   "Saving": "Сохранение",
@@ -273,7 +268,6 @@
   "Embeds": "Встраивания",
   "Configure": "Настроить",
   "Filter": "Фильтр",
-
   "Permissions": "Права доступа",
   "All permissions": "Все права",
   "Permission": "Право",
@@ -326,7 +320,6 @@
   "Could not load emojis": "Не удалось загрузить эмодзи",
   "Avatar of {{ name }}": "Аватар {{ name }}",
   "Added by": "Добавил",
-
   "Untitled": "Без названия",
   "Title": "Заголовок",
   "Description": "Описание",
@@ -368,8 +361,6 @@
   "Revoking": "Отзыв",
   "Are you sure you want to revoke access?": "Точно отозвать доступ?",
   "Are you sure you want to revoke the {{ tokenName }} token?": "Точно отозвать токен «{{ tokenName }}»?",
-
-  "Add a comment…": "Добавить комментарий…",
   "Knowledge base": "База знаний",
   "Quick start": "Быстрый старт",
   "Getting started": "С чего начать",
@@ -382,7 +373,6 @@
   "No expiry": "Без срока",
   "No one": "Никто",
   "No templates have been created yet": "Шаблоны пока не созданы",
-
   "Something went wrong": "Что-то пошло не так",
   "Try again": "Попробовать снова",
   "Network error": "Ошибка сети",
@@ -391,12 +381,9 @@
   "Not found": "Не найдено",
   "Page not found": "Страница не найдена",
   "Failed": "Не удалось",
-  "Failed to export members": "Не удалось экспортировать участников",
   "Check server logs for more details.": "Подробности в логах сервера.",
-
   "Link copied": "Ссылка скопирована",
   "Copied": "Скопировано",
-
   "Email digest": "Дайджест на email",
   "Daily": "Ежедневно",
   "Weekly": "Еженедельно",
@@ -406,16 +393,13 @@
   "Email address visibility": "Видимость email",
   "Receive an email when new features of note are added": "Получать письма о значимых новинках",
   "Tips on getting started with features and functionality": "Подсказки по основным возможностям",
-
   "Are you sure?": "Вы уверены?",
   "This action cannot be undone": "Это действие нельзя отменить",
   "Are you sure you want to delete this?": "Точно удалить?",
   "Are you sure you want to cancel this import?": "Точно отменить этот импорт?",
   "Are you sure you want to delete this import?": "Точно удалить этот импорт?",
-
   "Required": "Обязательно",
   "Optional": "Необязательно",
-
   "A short description": "Краткое описание",
   "A short description of your workspace.": "Краткое описание рабочего пространства.",
   "A template must have content": "Шаблон не может быть пустым",
@@ -442,7 +426,6 @@
   "Separate editing": "Отдельный режим редактирования",
   "Start view": "Стартовая страница",
   "Choose a photo or image to represent yourself.": "Выберите фото или изображение для своего профиля.",
-
   "Canceled": "Отменено",
   "Canceling": "Отменяется",
   "Completed": "Завершено",
@@ -456,7 +439,6 @@
   "Never used": "Ни разу не использовался",
   "Expired": "Истёк",
   "Expires": "Истекает",
-
   "Collapse": "Свернуть",
   "Collapse sidebar": "Свернуть боковую панель",
   "Expand": "Развернуть",
@@ -474,17 +456,14 @@
   "Table of contents position": "Положение содержания",
   "Unread count": "Счётчик непрочитанных",
   "Unread indicator": "Индикатор непрочитанных",
-
   "Manual": "Вручную",
   "Markdown": "Markdown",
   "File": "Файл",
   "File not supported – please upload a valid ZIP file": "Формат не поддерживается. Загрузите корректный ZIP-файл.",
   "Please choose a single file to import": "Выберите один файл для импорта",
-
   "Emoji": "Эмодзи",
   "Emojis": "Эмодзи",
   "Emoji options": "Действия с эмодзи",
-
   "Subdomain": "Поддомен",
   "Domain": "Домен",
   "Users can delete account": "Пользователи могут удалять аккаунт",
@@ -494,10 +473,8 @@
   "Template options": "Действия с шаблоном",
   "Revision options": "Действия с ревизией",
   "User options": "Действия с пользователем",
-
   "The server must have SMTP configured to enable this setting": "Для включения этой настройки на сервере должен быть настроен SMTP",
   "You": "Вы",
-
   "Could not load members": "Не удалось загрузить участников",
   "Could not load preference": "Не удалось загрузить настройку",
   "Could not load shared documents": "Не удалось загрузить опубликованные документы",
@@ -518,5 +495,13 @@
   "Date shared": "Дата публикации",
   "Default role": "Роль по умолчанию",
   "Delete account": "Удалить аккаунт",
-  "Email": "Email"
+  "Email": "Email",
+  "Projects": "Проекты",
+  "Tasks": "Задачи",
+  "Deals": "Сделки",
+  "Chats": "Чаты",
+  "Users": "Пользователи",
+  "Contacts": "Контакты",
+  "Companies": "Компании",
+  "Bitrix24": "Битрикс24"
 }

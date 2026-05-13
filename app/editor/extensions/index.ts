@@ -1,4 +1,5 @@
 import type { AnyExtensionClass } from "@shared/editor/lib/types";
+import Bitrix24MenuExtension from "~/editor/extensions/Bitrix24Menu";
 import BlockMenuExtension from "~/editor/extensions/BlockMenu";
 import ClipboardTextSerializer from "~/editor/extensions/ClipboardTextSerializer";
 import DiagramsExtension from "@shared/editor/extensions/Diagrams";
@@ -22,6 +23,7 @@ export const withUIExtensions = (nodes: Nodes) => [
   BlockMenuExtension,
   EmojiMenuExtension,
   MentionMenuExtension,
+  Bitrix24MenuExtension,
   FindAndReplaceExtension,
   HoverPreviewsExtension,
   SelectionToolbarExtension,
