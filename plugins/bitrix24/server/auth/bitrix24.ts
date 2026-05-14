@@ -132,7 +132,9 @@ if (
           const fullName =
             [profile.NAME, profile.LAST_NAME].filter(Boolean).join(" ").trim() ||
             email;
-          const avatarUrl = profile.PERSONAL_PHOTO || undefined;
+          const avatarUrl = profile.PERSONAL_PHOTO
+            ? encodeURI(profile.PERSONAL_PHOTO)
+            : undefined;
           const providerId = String(profile.ID);
           const subdomain = slugifyDomain(portalHost);
 
