@@ -412,6 +412,10 @@ export enum TeamPreference {
   MCP = "mcp",
   /** List of disabled embed provider titles. */
   DisabledEmbeds = "disabledEmbeds",
+  /** URL of the Bitrix24 portal for the back link. */
+  Bitrix24PortalUrl = "bitrix24PortalUrl",
+  /** Whether to show the Bitrix24 button in the sidebar. */
+  ShowBitrix24Button = "showBitrix24Button",
 }
 
 export type TeamPreferences = {
@@ -429,6 +433,8 @@ export type TeamPreferences = {
   [TeamPreference.EmailDisplay]?: EmailDisplay;
   [TeamPreference.MCP]?: boolean;
   [TeamPreference.DisabledEmbeds]?: string[];
+  [TeamPreference.Bitrix24PortalUrl]?: string | null;
+  [TeamPreference.ShowBitrix24Button]?: boolean;
 };
 
 export enum NavigationNodeType {

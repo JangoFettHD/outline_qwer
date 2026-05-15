@@ -1771,5 +1771,10 @@
   "{{userName}} was added to the group": "{{userName}} был добавлен в группу",
   "{{userName}} was removed from the group": "{{userName}} был удалён из группы",
   "“{{ collectionName }}” created": "“{{ collectionName }}” создана",
-  "“{{ documentTitle }}” {{ eventName }}": "“{{ documentTitle }}” {{ eventName }}"
+  "“{{ documentTitle }}” {{ eventName }}": "“{{ documentTitle }}” {{ eventName }}",
+  "Back to Bitrix24": "Вернуться в Битрикс24",
+  "Show Bitrix24 button": "Показать кнопку Битрикс24",
+  "Bitrix24 portal URL": "URL портала Битрикс24",
+  "Display a back link to Bitrix24 in the sidebar navigation.": "Отображать ссылку для возврата в Битрикс24 в боковой панели навигации.",
+  "The URL of your Bitrix24 portal.": "URL-адрес вашего портала Битрикс24."
 }

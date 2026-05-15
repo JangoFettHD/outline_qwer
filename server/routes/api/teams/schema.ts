@@ -70,6 +70,10 @@ export const TeamsUpdateSchema = BaseSchema.extend({
         mcp: z.boolean().optional(),
         /** List of disabled embed provider titles. */
         disabledEmbeds: z.array(z.string()).optional(),
+        /** URL of the Bitrix24 portal for the back link. */
+        bitrix24PortalUrl: z.string().url().nullish(),
+        /** Whether to show the Bitrix24 button in the sidebar. */
+        showBitrix24Button: z.boolean().optional(),
       })
       .optional(),
   }),

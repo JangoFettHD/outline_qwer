@@ -37,6 +37,8 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.EmailDisplay]: EmailDisplay.Members,
   [TeamPreference.MCP]: true,
   [TeamPreference.DisabledEmbeds]: [],
+  [TeamPreference.Bitrix24PortalUrl]: undefined,
+  [TeamPreference.ShowBitrix24Button]: false,
 };
 
 export const UserPreferenceDefaults: UserPreferences = {

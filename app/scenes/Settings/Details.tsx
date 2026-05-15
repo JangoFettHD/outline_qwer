@@ -67,6 +67,12 @@ function Details() {
   const [tocPosition, setTocPosition] = useState(
     team.getPreference(TeamPreference.TocPosition) as TOCPosition
   );
+  const [bitrix24PortalUrl, setBitrix24PortalUrl] = useState(
+    team.getPreference(TeamPreference.Bitrix24PortalUrl) || ""
+  );
+  const [showBitrix24Button, setShowBitrix24Button] = useState(
+    team.getPreference(TeamPreference.ShowBitrix24Button) ?? false
+  );
 
   const tocPositionOptions: Option[] = React.useMemo(
     () =>
@@ -106,6 +112,8 @@ function Details() {
             publicBranding,
             customTheme,
             tocPosition,
+            bitrix24PortalUrl: bitrix24PortalUrl || null,
+            showBitrix24Button,
           },
         });
         toast.success(t("Settings saved"));
@@ -122,6 +130,9 @@ function Details() {
       defaultCollectionId,
       publicBranding,
       customTheme,
+      tocPosition,
+      bitrix24PortalUrl,
+      showBitrix24Button,
       t,
     ]
   );
@@ -176,6 +187,16 @@ function Details() {
   const handleCommentingChange = React.useCallback(
     async (checked: boolean) => {
       team.setPreference(TeamPreference.Commenting, checked);
+      await team.save();
+      toast.success(t("Settings saved"));
+    },
+    [team, t]
+  );
+
+  const handleShowBitrix24ButtonChange = React.useCallback(
+    async (checked: boolean) => {
+      setShowBitrix24Button(checked);
+      team.setPreference(TeamPreference.ShowBitrix24Button, checked);
       await team.save();
       toast.success(t("Settings saved"));
     },
@@ -394,6 +415,39 @@ function Details() {
               name={TeamPreference.Commenting}
               checked={team.getPreference(TeamPreference.Commenting)}
               onChange={handleCommentingChange}
+            />
+          </SettingRow>
+
+          <Heading as="h2">{t("Integrations")}</Heading>
+          <SettingRow
+            name={TeamPreference.ShowBitrix24Button}
+            label={t("Show Bitrix24 button")}
+            description={t(
+              "Display a back link to Bitrix24 in the sidebar navigation."
+            )}
+          >
+            <Switch
+              id={TeamPreference.ShowBitrix24Button}
+              name={TeamPreference.ShowBitrix24Button}
+              checked={showBitrix24Button}
+              onChange={handleShowBitrix24ButtonChange}
+            />
+          </SettingRow>
+          <SettingRow
+            border={false}
+            label={t("Bitrix24 portal URL")}
+            name="bitrix24PortalUrl"
+            description={t(
+              "The URL of your Bitrix24 portal."
+            )}
+          >
+            <Input
+              id="bitrix24PortalUrl"
+              value={bitrix24PortalUrl}
+              onChange={(ev: React.ChangeEvent<HTMLInputElement>) => {
+                setBitrix24PortalUrl(ev.target.value);
+              }}
+              placeholder="https://qwer.bitrix24.ru"
             />
           </SettingRow>
 

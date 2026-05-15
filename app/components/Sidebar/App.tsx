@@ -19,6 +19,7 @@ import TeamLogo from "../TeamLogo";
 import Tooltip from "../Tooltip";
 import Sidebar from "./Sidebar";
 import ArchiveLink from "./components/ArchiveLink";
+import { Bitrix24Link } from "./components/Bitrix24Link";
 import Collections from "./components/Collections";
 import { DraftsLink } from "./components/DraftsLink";
 import DragPlaceholder from "./components/DragPlaceholder";
@@ -117,6 +118,7 @@ function AppSidebar() {
                 onClick={handleSearchClick}
               />
               {can.createDocument && <DraftsLink />}
+              <Bitrix24Link />
             </Section>
           </Overflow>
           <Scrollable flex shadow>
