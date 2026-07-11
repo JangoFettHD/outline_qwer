@@ -189,7 +189,12 @@ function matchChatUrl(url: URL): ParsedBitrix24Url | null {
  * @returns descriptor for calendar event, or `null`.
  */
 function matchEventUrl(url: URL): ParsedBitrix24Url | null {
-  if (!url.pathname.startsWith("/calendar")) {
+  // The real URL a user copies from the browser lives under their personal
+  // section — /company/personal/user/7/calendar/?EVENT_ID=42 — not just the
+  // top-level /calendar/. Match on "/calendar" appearing anywhere in the path
+  // together with a numeric EVENT_ID, so personal-calendar links resolve as
+  // events instead of falling through to the user-profile pattern.
+  if (!url.pathname.includes("/calendar")) {
     return null;
   }
   const id = url.searchParams.get("EVENT_ID");
@@ -213,7 +218,10 @@ export function buildBitrix24Url(entity: ParsedBitrix24Url): string {
     case "workgroup":
       return `${base}/workgroups/group/${entity.id}/`;
     case "task":
-      if (entity.groupId) {
+      // groupId "0" (string) is what the tasks REST API returns for personal
+      // tasks — it is truthy but not a real workgroup, so guard against it to
+      // avoid building /workgroups/group/0/… links that 404 on click.
+      if (entity.groupId && Number(entity.groupId) > 0) {
         return `${base}/workgroups/group/${entity.groupId}/tasks/task/view/${entity.id}/`;
       }
       return `${base}/company/personal/user/0/tasks/task/view/${entity.id}/`;

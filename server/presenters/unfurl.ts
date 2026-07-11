@@ -56,6 +56,14 @@ const presentMention = async (
   data: UnfurlData,
   options?: { includeEmail: boolean }
 ): Promise<UnfurlResponse[UnfurlResourceType.Mention]> => {
+  // Third-party unfurl plugins (e.g. Bitrix24) return a fully-formed Mention
+  // payload with no backing User/Document model. Pass it straight through,
+  // mirroring the Issue/Project/URL presenters, instead of dereferencing
+  // models that aren't there.
+  if (!data.user) {
+    return data as UnfurlResponse[UnfurlResourceType.Mention];
+  }
+
   const user: User = data.user;
   const document: Document = data.document;
 

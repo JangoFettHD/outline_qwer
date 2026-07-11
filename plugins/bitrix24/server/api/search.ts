@@ -17,19 +17,24 @@ const router = new Router();
  * `type` selects which Bitrix24 entity to look in. `query` is a free-text
  * substring; an empty string asks for recent / popular items of that type.
  */
+/** The entity types the picker can search, in display order. */
+const ENTITY_TYPES = [
+  "workgroup",
+  "task",
+  "deal",
+  "lead",
+  "event",
+  "chat",
+  "user",
+  "contact",
+  "company",
+] as const;
+
 const SearchSchema = z.object({
   body: z.object({
-    type: z.enum([
-      "workgroup",
-      "task",
-      "user",
-      "chat",
-      "deal",
-      "contact",
-      "company",
-      "lead",
-      "event",
-    ]),
+    // "all" fans out across every entity type server-side in one request, so
+    // the picker costs one rate-limit token per keystroke instead of nine.
+    type: z.enum([...ENTITY_TYPES, "all"]),
     query: z.string().max(120).default(""),
     limit: z.number().int().min(1).max(25).default(10),
   }),
@@ -84,13 +89,28 @@ function hit(
 
 router.post(
   "bitrix24.search",
-  rateLimiter(RateLimiterStrategy.OneHundredPerHour),
+  // Interactive typing load — a per-minute budget fits it far better than the
+  // old per-hour one, which the 9-way fan-out used to exhaust in minutes.
+  rateLimiter(RateLimiterStrategy.OneHundredPerMinute),
   auth(),
   validate(SearchSchema),
   async (ctx: APIContext<SearchReq>) => {
     const { type, query, limit } = ctx.input.body;
     const { user } = ctx.state.auth;
     const q = query.trim();
+
+    if (type === "all") {
+      // One request → every section, resolved in parallel. Sections are
+      // returned in ENTITY_TYPES order so the client renders them stably.
+      const sections = await Promise.all(
+        ENTITY_TYPES.map(async (t) => ({
+          type: t,
+          hits: await searchByType(t, q, limit, user).catch(() => []),
+        }))
+      );
+      ctx.body = { data: { sections } };
+      return;
+    }
 
     const hits = await searchByType(type, q, limit, user);
     ctx.body = { data: hits };
@@ -195,7 +215,9 @@ async function searchTasks(
   const items = wrapped?.tasks ?? [];
   return items.slice(0, limit).map((t) =>
     hit("task", String(t.id), t.title, {
-      groupId: t.groupId,
+      // Personal tasks come back with groupId "0" — treat as absent so we
+      // don't build /workgroups/group/0/… links that 404.
+      groupId: t.groupId && Number(t.groupId) > 0 ? t.groupId : undefined,
     })
   );
 }
@@ -268,8 +290,8 @@ async function searchDeals(
   q: string,
   limit: number
 ): Promise<SearchHit[]> {
-  const params: Record<string, string | number> = {
-    "select[]": "ID,TITLE,STAGE_ID,OPPORTUNITY,CURRENCY_ID",
+  const params: Record<string, string | number | string[]> = {
+    "select[]": ["ID", "TITLE", "STAGE_ID", "OPPORTUNITY", "CURRENCY_ID"],
     "order[ID]": "DESC",
     start: 0,
   };
@@ -302,8 +324,8 @@ async function searchContacts(
   q: string,
   limit: number
 ): Promise<SearchHit[]> {
-  const params: Record<string, string | number> = {
-    "select[]": "ID,NAME,LAST_NAME,POST,COMPANY_TITLE,EMAIL",
+  const params: Record<string, string | number | string[]> = {
+    "select[]": ["ID", "NAME", "LAST_NAME", "POST", "COMPANY_TITLE", "EMAIL"],
     "order[ID]": "DESC",
     start: 0,
   };
@@ -336,8 +358,8 @@ async function searchCompanies(
   q: string,
   limit: number
 ): Promise<SearchHit[]> {
-  const params: Record<string, string | number> = {
-    "select[]": "ID,TITLE,INDUSTRY,COMPANY_TYPE",
+  const params: Record<string, string | number | string[]> = {
+    "select[]": ["ID", "TITLE", "INDUSTRY", "COMPANY_TYPE"],
     "order[ID]": "DESC",
     start: 0,
   };
@@ -364,8 +386,8 @@ async function searchLeads(
   q: string,
   limit: number
 ): Promise<SearchHit[]> {
-  const params: Record<string, string | number> = {
-    "select[]": "ID,TITLE,NAME,LAST_NAME,STATUS_ID,COMPANY_TITLE",
+  const params: Record<string, string | number | string[]> = {
+    "select[]": ["ID", "TITLE", "NAME", "LAST_NAME", "STATUS_ID", "COMPANY_TITLE"],
     "order[ID]": "DESC",
     start: 0,
   };

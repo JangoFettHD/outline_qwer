@@ -185,8 +185,18 @@ router.post(
 
     // External resources
     // Use getDataOrSet which handles distributed locking to prevent thundering herd
-    // when multiple clients request the same URL simultaneously
-    const cacheKey = RedisPrefixHelper.getUnfurlKey(actor.teamId, url);
+    // when multiple clients request the same URL simultaneously.
+    //
+    // Scope the cache per-user, not just per-team: some unfurl providers
+    // (Bitrix24) resolve data with the acting user's own OAuth token and
+    // per-user ACLs, so a team-wide cache would serve one user's
+    // permission-scoped result (deal amounts, private chats) to teammates who
+    // lack access. Per-user keys cost a little more Redis for the shared-token
+    // providers (GitHub/Linear/Figma) but remove the cross-user leak.
+    const cacheKey = RedisPrefixHelper.getUnfurlKey(
+      actor.teamId,
+      `${actor.id}:${url}`
+    );
     const defaultCacheExpiry = 3600;
 
     const unfurlResult = await CacheHelper.getDataOrSet<

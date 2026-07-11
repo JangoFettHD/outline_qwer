@@ -7,7 +7,7 @@ import validate from "@server/middlewares/validate";
 import type { APIContext } from "@server/types";
 import { RateLimiterStrategy } from "@server/utils/RateLimiter";
 import { buildBitrix24Url } from "../parser";
-import { callRest } from "../rest";
+import { Bitrix24Error, callRestOrThrow } from "../rest";
 
 const router = new Router();
 
@@ -58,18 +58,35 @@ router.post(
     if (responsibleId !== undefined) {
       params["fields[RESPONSIBLE_ID]"] = String(responsibleId);
     }
-    if (groupId !== undefined) {
-      params["fields[GROUP_ID]"] = String(groupId);
+    // groupId "0" is not a real workgroup — treat as absent.
+    const normalizedGroupId =
+      groupId !== undefined && Number(groupId) > 0 ? String(groupId) : undefined;
+    if (normalizedGroupId) {
+      params["fields[GROUP_ID]"] = normalizedGroupId;
     }
     if (deadline) {
       params["fields[DEADLINE]"] = deadline;
     }
 
-    const result = await callRest<CreatedTaskResponse>(
-      user,
-      "tasks.task.add",
-      params
-    );
+    let result: CreatedTaskResponse;
+    try {
+      result = await callRestOrThrow<CreatedTaskResponse>(
+        user,
+        "tasks.task.add",
+        params
+      );
+    } catch (err) {
+      if (err instanceof Bitrix24Error) {
+        // Surface the real Bitrix24 reason (ACCESS_DENIED, bad DEADLINE, or a
+        // reauth prompt) instead of a generic failure.
+        throw InvalidRequestError(
+          err.reauthRequired
+            ? "Your Bitrix24 session has expired — please sign in with Bitrix24 again."
+            : `Bitrix24: ${err.description || err.code}`
+        );
+      }
+      throw err;
+    }
     if (!result?.task?.id) {
       throw InvalidRequestError(
         "Bitrix24 task creation failed — no task id returned."
@@ -80,7 +97,7 @@ router.post(
     const url = buildBitrix24Url({
       type: "task",
       id,
-      groupId: groupId !== undefined ? String(groupId) : undefined,
+      groupId: normalizedGroupId,
     });
 
     ctx.body = { data: { id, url } };

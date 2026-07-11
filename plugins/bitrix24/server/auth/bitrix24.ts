@@ -3,9 +3,11 @@ import type { Context } from "koa";
 import Router from "koa-router";
 import { Strategy } from "passport-oauth2";
 import { slugifyDomain } from "@shared/utils/domains";
+import { addSeconds } from "date-fns";
 import accountProvisioner from "@server/commands/accountProvisioner";
 import { createContext } from "@server/context";
 import passportMiddleware from "@server/middlewares/passport";
+import { AuthenticationProvider, UserAuthentication } from "@server/models";
 import type { User } from "@server/models";
 import type { AuthenticationResult } from "@server/types";
 import fetch from "@server/utils/fetch";
@@ -84,6 +86,58 @@ async function fetchCurrentUser(
     );
   }
   return json.result;
+}
+
+/**
+ * Idempotently persist a user's Bitrix24 OAuth tokens. Runs after
+ * accountProvisioner so tokens survive even the admin early-return path
+ * (which skips userProvisioner). Safe on the (authenticationProviderId,
+ * userId) unique constraint — updates the row in place when it exists.
+ *
+ * @param teamId team the user belongs to.
+ * @param userId user whose tokens to store.
+ * @param tokens the fresh token set from the OAuth exchange.
+ */
+async function persistTokens(
+  teamId: string,
+  userId: string,
+  tokens: {
+    providerId: string;
+    accessToken: string;
+    refreshToken: string;
+    expiresIn?: number;
+    scopes: string[];
+  }
+): Promise<void> {
+  const provider = await AuthenticationProvider.findOne({
+    where: { name: config.id, teamId },
+  });
+  if (!provider) {
+    return;
+  }
+  const expiresAt = tokens.expiresIn
+    ? addSeconds(new Date(), tokens.expiresIn)
+    : null;
+  const [row, created] = await UserAuthentication.findOrCreate({
+    where: { userId, authenticationProviderId: provider.id },
+    defaults: {
+      userId,
+      authenticationProviderId: provider.id,
+      providerId: tokens.providerId,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      scopes: tokens.scopes,
+      expiresAt,
+    },
+  });
+  if (!created) {
+    row.accessToken = tokens.accessToken;
+    row.refreshToken = tokens.refreshToken;
+    row.scopes = tokens.scopes;
+    row.expiresAt = expiresAt;
+    row.providerId = tokens.providerId;
+    await row.save();
+  }
 }
 
 if (
@@ -189,6 +243,19 @@ if (
               expiresIn: params.expires_in,
               scopes: params.scope ? params.scope.split(" ") : ["user"],
             },
+          });
+
+          // accountProvisioner takes an early return for existing admins,
+          // which skips userProvisioner and so never persists the fresh
+          // tokens. Upsert them unconditionally here so re-authenticating (the
+          // natural way an admin tries to fix an expired Bitrix24 connection)
+          // and first-time linking from an email account both work.
+          await persistTokens(result.team.id, result.user.id, {
+            providerId,
+            accessToken,
+            refreshToken,
+            expiresIn: params.expires_in,
+            scopes: params.scope ? params.scope.split(" ") : ["user"],
           });
 
           return done(null, result.user, { ...result, client });

@@ -46,20 +46,17 @@ type Props = Omit<
  * `(t) => string` factory so the SuggestionsMenu picks up the current locale
  * via the editor's translation function.
  */
-const SECTIONS: Array<{
-  type: string;
-  section: ({ t }: { t: TFunction }) => string;
-}> = [
-  { type: "workgroup", section: ({ t }) => t("Projects") },
-  { type: "task", section: ({ t }) => t("Tasks") },
-  { type: "deal", section: ({ t }) => t("Deals") },
-  { type: "lead", section: ({ t }) => t("Leads") },
-  { type: "event", section: ({ t }) => t("Events") },
-  { type: "chat", section: ({ t }) => t("Chats") },
-  { type: "user", section: ({ t }) => t("Users") },
-  { type: "contact", section: ({ t }) => t("Contacts") },
-  { type: "company", section: ({ t }) => t("Companies") },
-];
+const SECTION_LABEL: Record<string, ({ t }: { t: TFunction }) => string> = {
+  workgroup: ({ t }) => t("Projects"),
+  task: ({ t }) => t("Tasks"),
+  deal: ({ t }) => t("Deals"),
+  lead: ({ t }) => t("Leads"),
+  event: ({ t }) => t("Events"),
+  chat: ({ t }) => t("Chats"),
+  user: ({ t }) => t("Users"),
+  contact: ({ t }) => t("Contacts"),
+  company: ({ t }) => t("Companies"),
+};
 
 /** Time to wait after the last keystroke before sending a new search. */
 const DEBOUNCE_MS = 200;
@@ -115,23 +112,17 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
   const { request } = useRequest(
     React.useCallback(async () => {
       const seq = ++fetchSeq.current;
-      const lookups = await Promise.all(
-        SECTIONS.map((sec) =>
-          client
-            .post("/bitrix24.search", {
-              type: sec.type,
-              query: search ?? "",
-              limit: 6,
-            })
-            .then((res: { data: SearchHit[] }) => ({
-              section: sec.section,
-              hits: res.data ?? [],
-            }))
-            // Swallow per-section failures so one slow / broken endpoint
-            // doesn't blank out the whole picker.
-            .catch(() => ({ section: sec.section, hits: [] }))
-        )
-      );
+      // One request fans out across all entity types server-side, so the
+      // picker costs a single rate-limit token per keystroke.
+      const res = (await client
+        .post("/bitrix24.search", {
+          type: "all",
+          query: search ?? "",
+          limit: 6,
+        })
+        .catch(() => ({ data: { sections: [] } }))) as {
+        data: { sections: Array<{ type: string; hits: SearchHit[] }> };
+      };
 
       // A newer query was fired while we were waiting — drop these results.
       if (seq !== fetchSeq.current) {
@@ -139,7 +130,8 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
       }
 
       const collected: Bitrix24Item[] = [];
-      for (const { section, hits } of lookups) {
+      for (const { type, hits } of res.data.sections ?? []) {
+        const section = SECTION_LABEL[type];
         for (const h of hits) {
           // Bind `url` into the closure so each row's onClick inserts the
           // correct entity. onClick is invoked by SuggestionsMenu AFTER
