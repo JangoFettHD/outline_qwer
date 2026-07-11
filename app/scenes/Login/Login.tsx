@@ -40,8 +40,12 @@ import { BackButton } from "./components/BackButton";
 import { Background } from "./components/Background";
 import { Centered } from "./components/Centered";
 import { Notices } from "./components/Notices";
-import { getRedirectUrl, navigateToSubdomain } from "./urls";
+import { PasskeyAuthenticationProvider } from "./components/PasskeyAuthenticationProvider";
+import { SigningIn } from "./components/SigningIn";
+import { SwitchHostButton } from "./components/SwitchHostButton";
+import { navigateToSubdomain } from "./urls";
 import lazyWithRetry from "~/utils/lazyWithRetry";
+import { getRedirectUrl } from "~/utils/urls";
 
 const WorkspaceSetup = lazyWithRetry(
   () => import("./components/WorkspaceSetup")
@@ -116,7 +120,19 @@ function Login({ children, onBack }: Props) {
     }
   }, [query]);
 
-  if (auth.authenticated) {
+  // A passkey login initiated from the desktop app must complete the login
+  // ceremony even when this browser already has a session.
+  const isPasskeyLogin = query.get("method") === "passkey";
+
+  // When the desktop app forces a passkey login it opens this page in the
+  // system browser, where the ceremony is triggered automatically. Show the
+  // "Signing in" screen rather than the login buttons.
+  const isDesktopPasskeyRedirect =
+    isPasskeyLogin &&
+    query.get("client") === Client.Desktop &&
+    !Desktop.isElectron();
+
+  if (auth.authenticated && !isPasskeyLogin) {
     const postLoginPath = spendPostLoginPath();
     if (postLoginPath) {
       return <Redirect to={postLoginPath} />;
@@ -138,6 +154,7 @@ function Login({ children, onBack }: Props) {
       <Background>
         <BackButton onBack={onBack} />
         <ChangeLanguage locale={detectLanguage()} />
+        <SwitchHostButton />
         <Centered>
           <PageTitle title={t("Login")} />
           <Heading centered>{t("Error")}</Heading>
@@ -160,6 +177,22 @@ function Login({ children, onBack }: Props) {
   // indicator here that's delayed by 250ms
   if (!config) {
     return <LoadingIndicator />;
+  }
+
+  // The passkey ceremony is triggered automatically here, so render the
+  // "Signing in" screen in place of the login buttons. The passkey provider is
+  // still mounted (hidden) to drive the ceremony and form submission, revealing
+  // a retry button if the ceremony fails.
+  if (isDesktopPasskeyRedirect) {
+    return (
+      <Background>
+        <ChangeLanguage locale={detectLanguage()} />
+        <Centered gap={12}>
+          <SigningIn />
+          <PasskeyAuthenticationProvider />
+        </Centered>
+      </Background>
+    );
   }
 
   const isCustomDomain = parseDomain(window.location.origin).custom;
@@ -297,6 +330,7 @@ function Login({ children, onBack }: Props) {
     <Background>
       <BackButton onBack={onBack} config={config} />
       <ChangeLanguage locale={detectLanguage()} />
+      <SwitchHostButton />
 
       <Centered gap={12}>
         <PageTitle

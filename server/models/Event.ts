@@ -20,6 +20,7 @@ import {
 import { globalEventQueue } from "../queues";
 import type { APIContext } from "../types";
 import { AuthenticationType } from "../types";
+import { normalizeIp } from "../utils/ip";
 import Collection from "./Collection";
 import Document from "./Document";
 import Team from "./Team";
@@ -48,7 +49,7 @@ class Event extends IdModel<
 
   /** The originating IP address of the event. */
   @IsIP
-  @Column
+  @Column(DataType.STRING)
   ip: string | null;
 
   /** The type of authentication used to create the event. */
@@ -75,10 +76,7 @@ class Event extends IdModel<
 
   @BeforeCreate
   static cleanupIp(model: Event) {
-    if (model.ip) {
-      // cleanup IPV6 representations of IPV4 addresses
-      model.ip = model.ip.replace(/^::ffff:/, "");
-    }
+    model.ip = normalizeIp(model.ip);
   }
 
   @AfterSave

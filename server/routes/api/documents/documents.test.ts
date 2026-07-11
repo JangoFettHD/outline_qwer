@@ -12,7 +12,7 @@ import {
 import { TextHelper } from "@shared/utils/TextHelper";
 import { createContext } from "@server/context";
 import { parser } from "@server/editor";
-import type { User } from "@server/models";
+import type { Group, User } from "@server/models";
 import {
   Document,
   View,
@@ -47,6 +47,106 @@ beforeEach(async () => {
   await buildDocument();
 });
 
+type PermissionManagementSubject = {
+  actor: User;
+  document: Document;
+  member: User;
+  group: Group;
+};
+
+async function expectCanManageDocumentPermissions({
+  actor,
+  document,
+  member,
+  group,
+}: PermissionManagementSubject) {
+  const addUser = await server.post("/api/documents.add_user", actor, {
+    body: {
+      id: document.id,
+      userId: member.id,
+    },
+  });
+  expect(addUser.status).toEqual(200);
+
+  const removeUser = await server.post("/api/documents.remove_user", actor, {
+    body: {
+      id: document.id,
+      userId: member.id,
+    },
+  });
+  expect(removeUser.status).toEqual(200);
+
+  const addGroup = await server.post("/api/documents.add_group", actor, {
+    body: {
+      id: document.id,
+      groupId: group.id,
+    },
+  });
+  expect(addGroup.status).toEqual(200);
+
+  const removeGroup = await server.post("/api/documents.remove_group", actor, {
+    body: {
+      id: document.id,
+      groupId: group.id,
+    },
+  });
+  expect(removeGroup.status).toEqual(200);
+}
+
+async function expectCannotManageDocumentPermissions({
+  actor,
+  document,
+  member,
+  group,
+}: PermissionManagementSubject) {
+  await UserMembership.create({
+    userId: member.id,
+    documentId: document.id,
+    permission: DocumentPermission.Read,
+    createdById: actor.id,
+  });
+  await GroupMembership.create({
+    groupId: group.id,
+    documentId: document.id,
+    permission: DocumentPermission.Read,
+    createdById: actor.id,
+  });
+
+  const addUser = await server.post("/api/documents.add_user", actor, {
+    body: {
+      id: document.id,
+      userId: member.id,
+      permission: DocumentPermission.ReadWrite,
+    },
+  });
+  expect(addUser.status).toEqual(403);
+
+  const removeUser = await server.post("/api/documents.remove_user", actor, {
+    body: {
+      id: document.id,
+      userId: member.id,
+    },
+  });
+  expect(removeUser.status).toEqual(403);
+
+  const addGroup = await server.post("/api/documents.add_group", actor, {
+    body: {
+      id: document.id,
+      groupId: group.id,
+      permission: DocumentPermission.ReadWrite,
+    },
+  });
+  expect(addGroup.status).toEqual(403);
+
+  const removeGroup = await server.post("/api/documents.remove_group", actor, {
+    body: {
+      id: document.id,
+      groupId: group.id,
+    },
+  });
+  expect(removeGroup.status).toEqual(403);
+}
+
 describe("#documents.info", () => {
   it("should fail if both id and shareId are absent", async () => {
     const res = await server.post("/api/documents.info", {
@@ -63,9 +163,8 @@ describe("#documents.info", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -80,9 +179,8 @@ describe("#documents.info", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.urlId,
       },
     });
@@ -98,9 +196,8 @@ describe("#documents.info", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -118,9 +215,8 @@ describe("#documents.info", () => {
     const document = await buildDocument({
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -133,9 +229,8 @@ describe("#documents.info", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -179,16 +274,14 @@ describe("#documents.info", () => {
       teamId: user.teamId,
       userId: user.id,
     });
-    await server.post("/api/collections.delete", {
+    await server.post("/api/collections.delete", user, {
       body: {
         id: collection.id,
-        token: user.getJwtToken(),
       },
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user2, {
       body: {
         id: doc.id,
-        token: user2.getJwtToken(),
       },
     });
     expect(res.status).toEqual(403);
@@ -206,16 +299,14 @@ describe("#documents.info", () => {
       teamId: user.teamId,
       userId: user.id,
     });
-    await server.post("/api/collections.delete", {
+    await server.post("/api/collections.delete", user, {
       body: {
         id: collection.id,
-        token: user.getJwtToken(),
       },
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
         id: doc.id,
-        token: user.getJwtToken(),
       },
     });
     const body = await res.json();
@@ -405,9 +496,8 @@ describe("#documents.info", () => {
       teamId: document.teamId,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         shareId: share.id,
       },
     });
@@ -430,9 +520,8 @@ describe("#documents.info", () => {
       teamId: document.teamId,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         shareId: share.id,
       },
     });
@@ -460,9 +549,8 @@ describe("#documents.info", () => {
       teamId: document.teamId,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         shareId: share.id,
       },
     });
@@ -473,9 +561,8 @@ describe("#documents.info", () => {
 
   it("should not error if document doesn't exist", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: "9bcbf864-1090-4eb6-ba05-4da0c3a5c58e",
       },
     });
@@ -495,9 +582,8 @@ describe("#documents.info", () => {
   it("should require authorization with incorrect token", async () => {
     const document = await buildDocument();
     const user = await buildUser();
-    const res = await server.post("/api/documents.info", {
+    const res = await server.post("/api/documents.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -523,9 +609,8 @@ describe("#documents.export", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.export", {
+    const res = await server.post("/api/documents.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -540,9 +625,8 @@ describe("#documents.export", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.export", {
+    const res = await server.post("/api/documents.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
       headers: {
@@ -560,9 +644,8 @@ describe("#documents.export", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.export", {
+    const res = await server.post("/api/documents.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -580,9 +663,8 @@ describe("#documents.export", () => {
     const document = await buildDocument({
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.export", {
+    const res = await server.post("/api/documents.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -595,9 +677,8 @@ describe("#documents.export", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.export", {
+    const res = await server.post("/api/documents.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -619,9 +700,8 @@ describe("#documents.export", () => {
   it("should require authorization with incorrect token", async () => {
     const document = await buildDocument();
     const user = await buildUser();
-    const res = await server.post("/api/documents.export", {
+    const res = await server.post("/api/documents.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -632,9 +712,8 @@ describe("#documents.export", () => {
 describe("#documents.list", () => {
   it("should fail for invalid userId", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         userId: "invalid",
       },
     });
@@ -645,9 +724,8 @@ describe("#documents.list", () => {
 
   it("should fail for invalid collectionId", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: "invalid",
       },
     });
@@ -658,9 +736,8 @@ describe("#documents.list", () => {
 
   it("should fail for invalid parentDocumentId", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         parentDocumentId: "invalid",
       },
     });
@@ -671,9 +748,8 @@ describe("#documents.list", () => {
 
   it("should fail for invalid backlinkDocumentId", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         backlinkDocumentId: "invalid",
       },
     });
@@ -688,11 +764,7 @@ describe("#documents.list", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.list", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.list", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(1);
@@ -712,9 +784,8 @@ describe("#documents.list", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         parentDocumentId: null,
       },
     });
@@ -730,14 +801,53 @@ describe("#documents.list", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user);
+    const body = await res.json();
+    expect(res.status).toEqual(200);
+    expect(body.data.length).toEqual(0);
+  });
+
+  it("should return draft documents when filtering with statusFilter", async () => {
+    const user = await buildUser();
+    const document = await buildDraftDocument({
+      userId: user.id,
+      teamId: user.teamId,
+    });
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
+        statusFilter: [StatusFilter.Draft],
       },
     });
     const body = await res.json();
     expect(res.status).toEqual(200);
-    expect(body.data.length).toEqual(0);
+    expect(body.data.length).toEqual(1);
+    expect(body.data[0].id).toEqual(document.id);
+    expect(body.pagination.total).toEqual(1);
+  });
+
+  it("should return drafts shared directly with the user", async () => {
+    const user = await buildUser();
+    const author = await buildUser({ teamId: user.teamId });
+    const document = await buildDraftDocument({
+      userId: author.id,
+      teamId: user.teamId,
+    });
+    await UserMembership.create({
+      documentId: document.id,
+      userId: user.id,
+      createdById: author.id,
+      permission: DocumentPermission.Read,
+    });
+    const res = await server.post("/api/documents.list", user, {
+      body: {
+        statusFilter: [StatusFilter.Draft],
+      },
+    });
+    const body = await res.json();
+    expect(res.status).toEqual(200);
+    expect(body.data.length).toEqual(1);
+    expect(body.data[0].id).toEqual(document.id);
+    expect(body.pagination.total).toEqual(1);
   });
 
   it("should not return archived documents", async () => {
@@ -748,11 +858,7 @@ describe("#documents.list", () => {
     });
     document.archivedAt = new Date();
     await document.save();
-    const res = await server.post("/api/documents.list", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.list", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -781,9 +887,8 @@ describe("#documents.list", () => {
       }),
     ]);
     await withAPIContext(user, (ctx) => docs[0].archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         statusFilter: [StatusFilter.Archived],
         collectionId: collection.id,
       },
@@ -825,9 +930,8 @@ describe("#documents.list", () => {
       withAPIContext(user, (ctx) => docs[0].archiveWithCtx(ctx)),
       withAPIContext(user, (ctx) => docs[1].archiveWithCtx(ctx)),
     ]);
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         statusFilter: [StatusFilter.Archived],
       },
     });
@@ -852,11 +956,7 @@ describe("#documents.list", () => {
       teamId: team.id,
     });
 
-    const res = await server.post("/api/documents.list", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.list", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -874,9 +974,8 @@ describe("#documents.list", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         direction: "ASC",
       },
     });
@@ -906,9 +1005,8 @@ describe("#documents.list", () => {
     });
     await collection.reload();
     await collection.addDocumentToStructure(anotherDoc, 0);
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         sort: "index",
         direction: "ASC",
@@ -945,9 +1043,8 @@ describe("#documents.list", () => {
     const expectedOrder = documents.slice().reverse();
 
     // First page (offset=0, limit=10)
-    const res1 = await server.post("/api/documents.list", {
+    const res1 = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         sort: "index",
         direction: "ASC",
@@ -962,9 +1059,8 @@ describe("#documents.list", () => {
     expect(body1.data[9].id).toEqual(expectedOrder[9].id);
 
     // Second page (offset=10, limit=10) - this tests the bug fix
-    const res2 = await server.post("/api/documents.list", {
+    const res2 = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         sort: "index",
         direction: "ASC",
@@ -979,9 +1075,8 @@ describe("#documents.list", () => {
     expect(body2.data[9].id).toEqual(expectedOrder[19].id);
 
     // Third page (offset=20, limit=10)
-    const res3 = await server.post("/api/documents.list", {
+    const res3 = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         sort: "index",
         direction: "ASC",
@@ -1002,9 +1097,8 @@ describe("#documents.list", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: document.collectionId,
       },
     });
@@ -1038,9 +1132,8 @@ describe("#documents.list", () => {
         },
       }
     );
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
       },
     });
@@ -1067,9 +1160,8 @@ describe("#documents.list", () => {
       documentId: document.id,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.list", {
+    const res = await server.post("/api/documents.list", user, {
       body: {
-        token: user.getJwtToken(),
         backlinkDocumentId: document.id,
       },
     });
@@ -1094,9 +1186,8 @@ describe("#documents.drafts", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.drafts", {
+    const res = await server.post("/api/documents.drafts", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: "invalid",
       },
     });
@@ -1111,9 +1202,8 @@ describe("#documents.drafts", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.drafts", {
+    const res = await server.post("/api/documents.drafts", user, {
       body: {
-        token: user.getJwtToken(),
         dateFilter: "invalid",
       },
     });
@@ -1128,11 +1218,7 @@ describe("#documents.drafts", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.drafts", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.drafts", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(1);
@@ -1154,11 +1240,7 @@ describe("#documents.drafts", () => {
     });
     drafts.push(draftDocument);
 
-    const res = await server.post("/api/documents.drafts", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.drafts", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(drafts.length);
@@ -1176,11 +1258,7 @@ describe("#documents.drafts", () => {
       teamId: user.teamId,
     });
 
-    const res = await server.post("/api/documents.drafts", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.drafts", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -1209,16 +1287,14 @@ describe("#documents.search_titles", () => {
       teamId: user.teamId,
     });
     // add member to the document
-    await server.post("/api/documents.add_user", {
+    await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", member, {
       body: {
-        token: member.getJwtToken(),
         query: "title",
         statusFilter: [StatusFilter.Draft],
       },
@@ -1248,16 +1324,14 @@ describe("#documents.search_titles", () => {
       teamId: user.teamId,
     });
     // add member to the document
-    await server.post("/api/documents.add_user", {
+    await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", member, {
       body: {
-        token: member.getJwtToken(),
         query: "title",
       },
     });
@@ -1269,11 +1343,7 @@ describe("#documents.search_titles", () => {
 
   it("should fail without query", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.search_titles", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.search_titles", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual(
@@ -1288,9 +1358,8 @@ describe("#documents.search_titles", () => {
       teamId: user.teamId,
       title: "Super secret",
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", user, {
       body: {
-        token: user.getJwtToken(),
         query: "SECRET",
       },
     });
@@ -1309,9 +1378,8 @@ describe("#documents.search_titles", () => {
       createdAt: subDays(new Date(), 365),
       updatedAt: subDays(new Date(), 365),
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", user, {
       body: {
-        token: user.getJwtToken(),
         query: "SECRET",
         dateFilter: "day",
       },
@@ -1329,9 +1397,8 @@ describe("#documents.search_titles", () => {
       title: "Super secret",
       archivedAt: new Date(),
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", user, {
       body: {
-        token: user.getJwtToken(),
         query: "SECRET",
         statusFilter: [StatusFilter.Archived],
       },
@@ -1349,9 +1416,8 @@ describe("#documents.search_titles", () => {
       teamId: user.teamId,
       title: "Super secret",
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", user, {
       body: {
-        token: user.getJwtToken(),
         query: "SECRET",
         statusFilter: [StatusFilter.Draft],
       },
@@ -1369,9 +1435,8 @@ describe("#documents.search_titles", () => {
       teamId: user.teamId,
       title: "Super secret",
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", user, {
       body: {
-        token: user.getJwtToken(),
         query: "SECRET",
         userId: user.id,
       },
@@ -1396,9 +1461,8 @@ describe("#documents.search_titles", () => {
       title: "Super secret",
       deletedAt: new Date(),
     });
-    const res = await server.post("/api/documents.search_titles", {
+    const res = await server.post("/api/documents.search_titles", user, {
       body: {
-        token: user.getJwtToken(),
         query: "SECRET",
         statusFilter: [StatusFilter.Published, StatusFilter.Draft],
       },
@@ -1422,9 +1486,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
       title: "Much test support",
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "much",
       },
     });
@@ -1486,9 +1549,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         shareId: share.id,
         statusFilter: [StatusFilter.Draft],
         query: "test",
@@ -1542,9 +1604,8 @@ describe("#documents.search", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
       },
     });
@@ -1575,9 +1636,8 @@ describe("#documents.search", () => {
         userId: user.id,
         teamId: user.teamId,
       });
-      const res = await server.post("/api/documents.search", {
+      const res = await server.post("/api/documents.search", user, {
         body: {
-          token: user.getJwtToken(),
           query: `search -random`,
         },
       });
@@ -1601,9 +1661,8 @@ describe("#documents.search", () => {
         userId: user.id,
         teamId: user.teamId,
       });
-      const res = await server.post("/api/documents.search", {
+      const res = await server.post("/api/documents.search", user, {
         body: {
-          token: user.getJwtToken(),
           query: `"search term"`,
         },
       });
@@ -1623,9 +1682,8 @@ describe("#documents.search", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         statusFilter: [StatusFilter.Published, StatusFilter.Archived],
       },
@@ -1637,9 +1695,8 @@ describe("#documents.search", () => {
 
   it("should not error when search term is very long", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query:
           "much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much much longer search term",
       },
@@ -1658,9 +1715,8 @@ describe("#documents.search", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         statusFilter: [StatusFilter.Draft],
       },
@@ -1680,9 +1736,8 @@ describe("#documents.search", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         statusFilter: [StatusFilter.Draft],
         query: "text",
       },
@@ -1700,9 +1755,8 @@ describe("#documents.search", () => {
       publishedAt: null,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         statusFilter: [StatusFilter.Draft],
       },
@@ -1720,9 +1774,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         statusFilter: [StatusFilter.Published, StatusFilter.Draft],
       },
@@ -1740,9 +1793,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         statusFilter: [StatusFilter.Archived],
       },
@@ -1767,9 +1819,8 @@ describe("#documents.search", () => {
       text: "search term",
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         userId: user.id,
       },
@@ -1799,9 +1850,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         collectionId: collection.id,
       },
@@ -1827,9 +1877,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         collectionId: document.collectionId,
       },
@@ -1853,9 +1902,8 @@ describe("#documents.search", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
       },
     });
@@ -1866,9 +1914,8 @@ describe("#documents.search", () => {
 
   it("should not allow unknown dateFilter values", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "search term",
         dateFilter: "DROP TABLE students;",
       },
@@ -1889,9 +1936,8 @@ describe("#documents.search", () => {
 
   it("should save search term, hits and source", async () => {
     const user = await buildUser();
-    await server.post("/api/documents.search", {
+    await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         query: "my term",
       },
     });
@@ -1905,6 +1951,8 @@ describe("#documents.search", () => {
     expect(searchQuery.length).toBe(1);
     expect(searchQuery[0].results).toBe(0);
     expect(searchQuery[0].source).toBe("app");
+    expect(Number.isInteger(searchQuery[0].duration)).toBe(true);
+    expect(searchQuery[0].duration).toBeGreaterThanOrEqual(0);
   });
 
   it("should include individually shared docs with a user in search results", async () => {
@@ -1926,16 +1974,14 @@ describe("#documents.search", () => {
       teamId: user.teamId,
     });
     // add member to the document
-    await server.post("/api/documents.add_user", {
+    await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", member, {
       body: {
-        token: member.getJwtToken(),
         query: "title",
       },
     });
@@ -1966,16 +2012,14 @@ describe("#documents.search", () => {
       teamId: user.teamId,
     });
     // add member to the document
-    await server.post("/api/documents.add_user", {
+    await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
     });
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", member, {
       body: {
-        token: member.getJwtToken(),
         query: "title",
         statusFilter: [StatusFilter.Draft],
       },
@@ -2024,9 +2068,8 @@ describe("#documents.search", () => {
         title: "document 2 in collection 2",
       }),
     ]);
-    const res = await server.post("/api/documents.search", {
+    const res = await server.post("/api/documents.search", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection1.id,
       },
     });
@@ -2044,11 +2087,7 @@ describe("#documents.search", () => {
 describe("#documents.templatize", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.templatize", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.templatize", user);
     const body = await res.json();
     expect(res.status).toBe(400);
     expect(body.message).toBe("id: Must be a valid UUID or slug");
@@ -2059,9 +2098,8 @@ describe("#documents.templatize", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -2082,9 +2120,8 @@ describe("#documents.templatize", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
         publish: true,
@@ -2106,9 +2143,8 @@ describe("#documents.templatize", () => {
       teamId: admin.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", admin, {
       body: {
-        token: admin.getJwtToken(),
         id: document.id,
         publish: true,
       },
@@ -2129,9 +2165,8 @@ describe("#documents.templatize", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
         publish: false,
@@ -2153,9 +2188,8 @@ describe("#documents.templatize", () => {
       teamId: admin.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", admin, {
       body: {
-        token: admin.getJwtToken(),
         id: document.id,
         publish: false,
       },
@@ -2180,9 +2214,8 @@ describe("#documents.templatize", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: anotherCollection.id,
         publish: true,
@@ -2204,9 +2237,8 @@ describe("#documents.templatize", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         publish: true,
       },
@@ -2232,9 +2264,8 @@ describe("#documents.templatize", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.templatize", {
+    const res = await server.post("/api/documents.templatize", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
         publish: true,
@@ -2275,9 +2306,8 @@ describe("#documents.archived", () => {
       ),
     ]);
 
-    const res = await server.post("/api/documents.archived", {
+    const res = await server.post("/api/documents.archived", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: firstCollection.id,
       },
     });
@@ -2318,11 +2348,7 @@ describe("#documents.archived", () => {
       ),
     ]);
 
-    const res = await server.post("/api/documents.archived", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.archived", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data).toHaveLength(2);
@@ -2335,11 +2361,7 @@ describe("#documents.archived", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.archived", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.archived", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(1);
@@ -2352,11 +2374,7 @@ describe("#documents.archived", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.destroyWithCtx(ctx));
-    const res = await server.post("/api/documents.archived", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.archived", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -2372,11 +2390,7 @@ describe("#documents.archived", () => {
       collectionId: collection.id,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.archived", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.archived", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -2384,11 +2398,7 @@ describe("#documents.archived", () => {
 
   it("should require member", async () => {
     const viewer = await buildViewer();
-    const res = await server.post("/api/documents.archived", {
-      body: {
-        token: viewer.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.archived", viewer);
     expect(res.status).toEqual(403);
   });
 
@@ -2406,11 +2416,7 @@ describe("#documents.deleted", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.destroyWithCtx(ctx));
-    const res = await server.post("/api/documents.deleted", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.deleted", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(1);
@@ -2441,11 +2447,7 @@ describe("#documents.deleted", () => {
       withAPIContext(user, (ctx) => draftDocument.destroyWithCtx(ctx)),
       withAPIContext(user2, (ctx) => otherUserDraft.destroyWithCtx(ctx)),
     ]);
-    const res = await server.post("/api/documents.deleted", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.deleted", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(2);
@@ -2461,11 +2463,7 @@ describe("#documents.deleted", () => {
       teamId: admin.teamId,
     });
     await withAPIContext(admin, (ctx) => document.destroyWithCtx(ctx));
-    const res = await server.post("/api/documents.deleted", {
-      body: {
-        token: admin.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.deleted", admin);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(1);
@@ -2484,11 +2482,7 @@ describe("#documents.deleted", () => {
       collectionId: collection.id,
     });
     await withAPIContext(user, (ctx) => document.destroyWithCtx(ctx));
-    const res = await server.post("/api/documents.deleted", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.deleted", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -2496,11 +2490,7 @@ describe("#documents.deleted", () => {
 
   it("should require member", async () => {
     const viewer = await buildViewer();
-    const res = await server.post("/api/documents.deleted", {
-      body: {
-        token: viewer.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.deleted", viewer);
     expect(res.status).toEqual(403);
   });
 
@@ -2513,11 +2503,7 @@ describe("#documents.deleted", () => {
 describe("#documents.viewed", () => {
   it("should return empty result if no views", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.viewed", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.viewed", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -2533,11 +2519,7 @@ describe("#documents.viewed", () => {
       documentId: document.id,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.viewed", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.viewed", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(1);
@@ -2556,11 +2538,7 @@ describe("#documents.viewed", () => {
       userId: user.id,
     });
     await document.destroy();
-    const res = await server.post("/api/documents.viewed", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.viewed", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -2588,11 +2566,7 @@ describe("#documents.viewed", () => {
         collectionId: collection.id,
       },
     });
-    const res = await server.post("/api/documents.viewed", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.viewed", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.length).toEqual(0);
@@ -2613,12 +2587,11 @@ describe("#documents.move", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
         id: document.id,
         collectionId: document.collectionId,
         parentDocumentId: document.id,
-        token: user.getJwtToken(),
       },
     });
     const body = await res.json();
@@ -2645,12 +2618,11 @@ describe("#documents.move", () => {
       collectionId: document.collectionId,
       parentDocumentId: document.id,
     });
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
         id: document.id,
         collectionId: document.collectionId,
         parentDocumentId: childDocument.id,
-        token: user.getJwtToken(),
       },
     });
     const body = await res.json();
@@ -2676,12 +2648,11 @@ describe("#documents.move", () => {
       teamId: document.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
         id: document.id,
         collectionId: collection.id,
         parentDocumentId: draft.id,
-        token: user.getJwtToken(),
       },
     });
     const body = await res.json();
@@ -2691,11 +2662,7 @@ describe("#documents.move", () => {
 
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.move", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.move", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -2712,9 +2679,8 @@ describe("#documents.move", () => {
       collectionId: collection.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
         index: -1,
@@ -2736,9 +2702,8 @@ describe("#documents.move", () => {
       collectionId: collection.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
         index: 0,
@@ -2758,9 +2723,8 @@ describe("#documents.move", () => {
       teamId: user.teamId,
       userId: user.id,
     });
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -2778,9 +2742,8 @@ describe("#documents.move", () => {
       teamId: user.teamId,
     });
     const collection = await buildCollection();
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -2803,14 +2766,57 @@ describe("#documents.move", () => {
       collectionId: collection.id,
     });
     const user = await buildUser();
-    const res = await server.post("/api/documents.move", {
+    const res = await server.post("/api/documents.move", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
     });
     expect(res.status).toEqual(403);
+  });
+
+  it("should allow reordering subdocuments with document-only admin access", async () => {
+    const owner = await buildUser();
+    const collection = await buildCollection({
+      teamId: owner.teamId,
+      userId: owner.id,
+      permission: null,
+    });
+    const parent = await buildDocument({
+      teamId: owner.teamId,
+      userId: owner.id,
+      collectionId: collection.id,
+    });
+    const childA = await buildDocument({
+      teamId: owner.teamId,
+      userId: owner.id,
+      collectionId: collection.id,
+      parentDocumentId: parent.id,
+    });
+    const childB = await buildDocument({
+      teamId: owner.teamId,
+      userId: owner.id,
+      collectionId: collection.id,
+      parentDocumentId: parent.id,
+    });
+
+    const user = await buildUser({ teamId: owner.teamId });
+    await UserMembership.create({
+      documentId: parent.id,
+      userId: user.id,
+      createdById: owner.id,
+      permission: DocumentPermission.Admin,
+    });
+
+    const res = await server.post("/api/documents.move", user, {
+      body: {
+        id: childB.id,
+        parentDocumentId: parent.id,
+        index: 0,
+      },
+    });
+    expect(res.status).toEqual(200);
+    expect(childA).toBeTruthy();
   });
 });
 
@@ -2827,18 +2833,16 @@ describe("#documents.restore", () => {
       collectionId: collection.id,
     });
 
-    const archiveRes = await server.post("/api/collections.archive", {
+    const archiveRes = await server.post("/api/collections.archive", user, {
       body: {
-        token: user.getJwtToken(),
         id: collection.id,
       },
     });
 
     expect(archiveRes.status).toEqual(200);
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -2862,9 +2866,8 @@ describe("#documents.restore", () => {
       collectionId: collection.id,
     });
 
-    const archiveRes = await server.post("/api/collections.archive", {
+    const archiveRes = await server.post("/api/collections.archive", user, {
       body: {
-        token: user.getJwtToken(),
         id: collection.id,
       },
     });
@@ -2873,9 +2876,8 @@ describe("#documents.restore", () => {
 
     const anotherCollection = await buildCollection();
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: anotherCollection.id,
       },
@@ -2891,11 +2893,7 @@ describe("#documents.restore", () => {
       teamId: user.teamId,
     });
     await document.destroy();
-    const res = await server.post("/api/documents.restore", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.restore", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -2908,9 +2906,8 @@ describe("#documents.restore", () => {
       teamId: user.teamId,
     });
     await document.destroy();
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: "invalid",
       },
@@ -2933,9 +2930,8 @@ describe("#documents.restore", () => {
     });
     await document.destroy();
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -2959,9 +2955,8 @@ describe("#documents.restore", () => {
     });
     await document.destroy();
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -2987,9 +2982,8 @@ describe("#documents.restore", () => {
     });
     await document.destroy();
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -3005,9 +2999,8 @@ describe("#documents.restore", () => {
       teamId: user.teamId,
     });
     await document.destroy();
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -3027,9 +3020,8 @@ describe("#documents.restore", () => {
       teamId: user.teamId,
     });
     await document.destroy();
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -3059,9 +3051,8 @@ describe("#documents.restore", () => {
     await withAPIContext(user, (ctx) => document.destroyWithCtx(ctx));
     await collection.destroy({ hooks: false });
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: anotherCollection.id,
       },
@@ -3089,9 +3080,8 @@ describe("#documents.restore", () => {
     await withAPIContext(user, (ctx) => document.destroyWithCtx(ctx));
     await collection.destroy({ hooks: false });
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -3118,9 +3108,8 @@ describe("#documents.restore", () => {
     collection.archivedAt = new Date();
     await collection.save();
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -3142,9 +3131,8 @@ describe("#documents.restore", () => {
       collectionId: collection.id,
     });
     await document.destroy();
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
       },
@@ -3159,9 +3147,8 @@ describe("#documents.restore", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -3184,9 +3171,8 @@ describe("#documents.restore", () => {
     });
     await withAPIContext(user, (ctx) => childDocument.archiveWithCtx(ctx));
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: childDocument.id,
       },
     });
@@ -3213,9 +3199,8 @@ describe("#documents.restore", () => {
     document.content = parser.parse("updated")?.toJSON();
     await document.save();
 
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         revisionId,
       },
@@ -3240,9 +3225,8 @@ describe("#documents.restore", () => {
       anotherDoc
     );
     const revisionId = revision.id;
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         revisionId,
       },
@@ -3252,9 +3236,8 @@ describe("#documents.restore", () => {
 
   it("should not error if document doesn't exist", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: "76fe8ba4-4e6a-4a75-8a10-9bf57330b24c",
       },
     });
@@ -3280,9 +3263,8 @@ describe("#documents.restore", () => {
     );
     const revisionId = revision.id;
     const user = await buildUser();
-    const res = await server.post("/api/documents.restore", {
+    const res = await server.post("/api/documents.restore", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         revisionId,
       },
@@ -3294,11 +3276,7 @@ describe("#documents.restore", () => {
 describe("#documents.import", () => {
   it("should require collectionId or parentDocumentId", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.import", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.import", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual(
@@ -3312,9 +3290,8 @@ describe("#documents.import", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.import", {
+    const res = await server.post("/api/documents.import", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
       },
     });
@@ -3355,7 +3332,7 @@ describe("#documents.import", () => {
     );
     const form = new FormData();
     form.append("file", content, "markdown.md");
-    form.append("token", user.getJwtToken());
+    form.append("token", user.getSessionToken());
     form.append("collectionId", collection.id);
 
     const res = await server.post("/api/documents.import", {
@@ -3365,6 +3342,68 @@ describe("#documents.import", () => {
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.id).toEqual(document.id);
+
+    vi.restoreAllMocks();
+  });
+
+  it("should import a child document with parent document permission only", async () => {
+    const team = await buildTeam();
+    const author = await buildUser({ teamId: team.id });
+    const user = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      userId: author.id,
+      teamId: team.id,
+      permission: null,
+    });
+    const parentDocument = await buildDocument({
+      userId: author.id,
+      teamId: team.id,
+      collectionId: collection.id,
+    });
+    await UserMembership.create({
+      documentId: parentDocument.id,
+      userId: user.id,
+      createdById: author.id,
+      permission: DocumentPermission.ReadWrite,
+    });
+    const childDocument = await buildDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      parentDocumentId: parentDocument.id,
+    });
+
+    vi.spyOn(FileStorage, "store").mockResolvedValue(
+      undefined as unknown as string
+    );
+    vi.spyOn(DocumentImportTask.prototype, "schedule").mockResolvedValue({
+      finished: vi.fn().mockResolvedValue({ documentId: childDocument.id }),
+    } as unknown as Awaited<ReturnType<DocumentImportTask["schedule"]>>);
+
+    const content = await readFile(
+      path.resolve(
+        __dirname,
+        "..",
+        "..",
+        "..",
+        "test",
+        "fixtures",
+        "markdown.md"
+      )
+    );
+    const form = new FormData();
+    form.append("file", content, "markdown.md");
+    form.append("token", user.getSessionToken());
+    form.append("collectionId", collection.id);
+    form.append("parentDocumentId", parentDocument.id);
+
+    const res = await server.post("/api/documents.import", {
+      headers: form.getHeaders(),
+      body: form,
+    });
+    const body = await res.json();
+    expect(res.status).toEqual(200);
+    expect(body.data.id).toEqual(childDocument.id);
 
     vi.restoreAllMocks();
   });
@@ -3390,9 +3429,8 @@ describe("#documents.create", () => {
       title: "template title",
       text,
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         templateId: template.id,
       },
     });
@@ -3408,9 +3446,8 @@ describe("#documents.create", () => {
 
   it("should create a document with empty title if no title is explicitly passed", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         text: "hello",
       },
     });
@@ -3426,9 +3463,8 @@ describe("#documents.create", () => {
       teamId: user.teamId,
       title: "template title",
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         templateId: template.id,
       },
     });
@@ -3444,9 +3480,8 @@ describe("#documents.create", () => {
       teamId: user.teamId,
       title: "template title",
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         templateId: template.id,
         title: "doc title",
       },
@@ -3463,9 +3498,8 @@ describe("#documents.create", () => {
       teamId: user.teamId,
       text: "template text",
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         templateId: template.id,
         text: "doc text",
       },
@@ -3477,9 +3511,8 @@ describe("#documents.create", () => {
 
   it("should fail for invalid collectionId", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: "invalid",
         title: "new document",
         text: "hello",
@@ -3492,9 +3525,8 @@ describe("#documents.create", () => {
 
   it("should succeed if collectionId is null", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: null,
         title: "new document",
         text: "hello",
@@ -3506,9 +3538,8 @@ describe("#documents.create", () => {
   it("should succeed with specific createdAt date in the past", async () => {
     const user = await buildUser();
     const createdAt = new Date().toISOString();
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: null,
         title: "new document",
         createdAt,
@@ -3523,9 +3554,8 @@ describe("#documents.create", () => {
 
   it("should fail with createdAt date in the future", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: null,
         title: "new document",
         createdAt: addMinutes(new Date(), 1).toISOString(),
@@ -3538,9 +3568,8 @@ describe("#documents.create", () => {
   it("should fail for invalid parentDocumentId", async () => {
     const team = await buildTeam();
     const user = await buildUser({ teamId: team.id });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         parentDocumentId: "invalid",
         title: "new document",
         text: "hello",
@@ -3558,9 +3587,8 @@ describe("#documents.create", () => {
       userId: user.id,
       teamId: team.id,
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         icon: "🚢",
         title: "new document",
@@ -3580,9 +3608,8 @@ describe("#documents.create", () => {
   it("should create a draft document not belonging to any collection", async () => {
     const team = await buildTeam();
     const user = await buildUser({ teamId: team.id });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         title: "draft document",
         text: "draft document without collection",
       },
@@ -3598,10 +3625,9 @@ describe("#documents.create", () => {
   it("should allow creating a draft template without a collection", async () => {
     const team = await buildTeam();
     const user = await buildUser({ teamId: team.id });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
         template: true,
-        token: user.getJwtToken(),
         title: "template",
         text: "template without collection",
       },
@@ -3616,9 +3642,8 @@ describe("#documents.create", () => {
   it("should not allow publishing without specifying the collection", async () => {
     const team = await buildTeam();
     const user = await buildUser({ teamId: team.id });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         title: "title",
         text: "text",
         publish: true,
@@ -3639,9 +3664,8 @@ describe("#documents.create", () => {
       userId: user.id,
       teamId: team.id,
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         title:
           "This is a really long title that is not acceptable to Outline because it is so ridiculously long that we need to have a limit somewhere",
@@ -3663,9 +3687,8 @@ describe("#documents.create", () => {
       userId: user.id,
       teamId: team.id,
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         collectionId: collection.id,
         title:
           "This text would be exactly 100 chars long if the following unicode character was counted as 1 char 🛡",
@@ -3687,9 +3710,8 @@ describe("#documents.create", () => {
       collectionId: collection.id,
       teamId: team.id,
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         parentDocumentId: document.id,
         title: "new document",
         text: "hello",
@@ -3705,9 +3727,8 @@ describe("#documents.create", () => {
   it("should error with invalid parentDocument", async () => {
     const team = await buildTeam();
     const user = await buildUser({ teamId: team.id });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         parentDocumentId: "d7a4eb73-fac1-4028-af45-d7e34d54db8e",
         title: "new document",
         text: "hello",
@@ -3730,9 +3751,8 @@ describe("#documents.create", () => {
       collectionId: collection.id,
       teamId: team.id,
     });
-    const res = await server.post("/api/documents.create", {
+    const res = await server.post("/api/documents.create", user, {
       body: {
-        token: user.getJwtToken(),
         parentDocumentId: document.id,
         title: "new document",
         text: "hello",
@@ -3753,9 +3773,8 @@ describe("#documents.update", () => {
       teamId: user.teamId,
       icon: "library",
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated title",
         text: "Updated text",
@@ -3784,9 +3803,8 @@ describe("#documents.update", () => {
       collectionId: null,
     });
 
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated title",
         text: "Updated text",
@@ -3815,9 +3833,8 @@ describe("#documents.update", () => {
       userId: user.id,
       collectionId: null,
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated title",
         text: "Updated text",
@@ -3847,9 +3864,8 @@ describe("#documents.update", () => {
     const anotherTeam = await buildTeam();
     user.teamId = anotherTeam.id;
     await user.save();
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated title",
         text: "Updated text",
@@ -3867,9 +3883,8 @@ describe("#documents.update", () => {
       teamId: user.teamId,
     });
 
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         icon: ":)",
       },
@@ -3886,9 +3901,8 @@ describe("#documents.update", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         icon: "beaker",
         color: "#FFDDEE",
@@ -3908,9 +3922,8 @@ describe("#documents.update", () => {
       icon: "beaker",
       color: "#FFDDEE",
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         icon: null,
         color: null,
@@ -3945,9 +3958,8 @@ describe("#documents.update", () => {
         },
       }
     );
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         collectionId: collection.id,
         title: "Updated title",
@@ -3974,9 +3986,8 @@ describe("#documents.update", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated title",
         text: "Updated text",
@@ -4014,9 +4025,8 @@ describe("#documents.update", () => {
       },
     ];
     await collection.save();
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated title",
       },
@@ -4052,9 +4062,8 @@ describe("#documents.update", () => {
         },
       }
     );
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Changed text",
       },
@@ -4091,9 +4100,8 @@ describe("#documents.update", () => {
         },
       }
     );
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         text: "Changed text",
       },
@@ -4121,9 +4129,8 @@ describe("#documents.update", () => {
         collectionId: collection.id,
       },
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         text: "Changed text",
       },
@@ -4137,9 +4144,8 @@ describe("#documents.update", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         text: "Additional text",
         append: true,
@@ -4157,9 +4163,8 @@ describe("#documents.update", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated Title",
         append: true,
@@ -4176,9 +4181,8 @@ describe("#documents.update", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: "Updated Title",
         text: "",
@@ -4195,9 +4199,8 @@ describe("#documents.update", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         title: document.title,
       },
@@ -4227,9 +4230,8 @@ describe("#documents.update", () => {
   it("should require authorization", async () => {
     const document = await buildDocument();
     const user = await buildUser();
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         text: "Updated",
       },
@@ -4240,9 +4242,8 @@ describe("#documents.update", () => {
   it("should fail for invalid collectionId", async () => {
     const document = await buildDocument();
     const user = await buildUser();
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         text: "Updated",
         collectionId: "invalid",
@@ -4255,9 +4256,8 @@ describe("#documents.update", () => {
 
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.update", {
+    const res = await server.post("/api/documents.update", user, {
       body: {
-        token: user.getJwtToken(),
         text: "Updated",
       },
     });
@@ -4270,11 +4270,7 @@ describe("#documents.update", () => {
 describe("#documents.archive", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.archive", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.archive", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -4292,9 +4288,8 @@ describe("#documents.archive", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.archive", {
+    const res = await server.post("/api/documents.archive", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4318,11 +4313,7 @@ describe("#documents.archive", () => {
 describe("#documents.delete", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.delete", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.delete", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -4334,9 +4325,8 @@ describe("#documents.delete", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4352,9 +4342,8 @@ describe("#documents.delete", () => {
       userId: user.id,
       deletedAt: null,
     });
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4379,9 +4368,8 @@ describe("#documents.delete", () => {
       userId: anotherUser.id,
       collectionId: null,
     });
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4403,9 +4391,8 @@ describe("#documents.delete", () => {
       publishedAt: null,
     });
 
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4424,15 +4411,13 @@ describe("#documents.delete", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    await server.post("/api/documents.delete", {
+    await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         permanent: true,
       },
@@ -4449,15 +4434,13 @@ describe("#documents.delete", () => {
       userId: user.id,
       teamId: team.id,
     });
-    await server.post("/api/documents.delete", {
+    await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         permanent: true,
       },
@@ -4483,9 +4466,8 @@ describe("#documents.delete", () => {
     await collection.destroy({
       hooks: false,
     });
-    const res = await server.post("/api/documents.delete", {
+    const res = await server.post("/api/documents.delete", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4510,11 +4492,7 @@ describe("#documents.delete", () => {
 describe("#documents.unpublish", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.unpublish", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.unpublish", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -4526,9 +4504,8 @@ describe("#documents.unpublish", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.unpublish", {
+    const res = await server.post("/api/documents.unpublish", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4557,9 +4534,8 @@ describe("#documents.unpublish", () => {
       parentDocumentId: document.id,
     });
     await withAPIContext(user, (ctx) => child.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.unpublish", {
+    const res = await server.post("/api/documents.unpublish", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4581,9 +4557,8 @@ describe("#documents.unpublish", () => {
       teamId: user.teamId,
       collectionId: collection.id,
     });
-    const res = await server.post("/api/documents.unpublish", {
+    const res = await server.post("/api/documents.unpublish", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4603,9 +4578,8 @@ describe("#documents.unpublish", () => {
       userId: user.id,
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.unpublish", {
+    const res = await server.post("/api/documents.unpublish", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4619,9 +4593,8 @@ describe("#documents.unpublish", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.destroyWithCtx(ctx));
-    const res = await server.post("/api/documents.unpublish", {
+    const res = await server.post("/api/documents.unpublish", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4635,9 +4608,8 @@ describe("#documents.unpublish", () => {
       teamId: user.teamId,
     });
     await withAPIContext(user, (ctx) => document.archiveWithCtx(ctx));
-    const res = await server.post("/api/documents.unpublish", {
+    const res = await server.post("/api/documents.unpublish", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4682,9 +4654,8 @@ describe("#documents.users", () => {
       }),
     ]);
 
-    const res = await server.post("/api/documents.users", {
+    const res = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4741,9 +4712,8 @@ describe("#documents.users", () => {
       permission: DocumentPermission.ReadWrite,
     });
 
-    const res = await server.post("/api/documents.users", {
+    const res = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -4839,9 +4809,8 @@ describe("#documents.users", () => {
       }),
     ]);
 
-    const res = await server.post("/api/documents.users", {
+    const res = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         query: "Al",
       },
@@ -4853,9 +4822,8 @@ describe("#documents.users", () => {
     expect(body.data[0].id).toContain(alan.id);
     expect(body.data[0].name).toBe(alan.name);
 
-    const anotherRes = await server.post("/api/documents.users", {
+    const anotherRes = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         query: "e",
       },
@@ -4914,13 +4882,11 @@ describe("#documents.users", () => {
     });
 
     // add people to group
-    await Promise.all([
-      group.$add("user", ken, {
-        through: {
-          createdById: user.id,
-        },
-      }),
-    ]);
+    await group.$add("user", ken, {
+      through: {
+        createdById: user.id,
+      },
+    });
 
     // add people and groups to collection
     await Promise.all([
@@ -4950,9 +4916,8 @@ describe("#documents.users", () => {
       }),
     ]);
 
-    const res = await server.post("/api/documents.users", {
+    const res = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: alan.id,
       },
@@ -4964,9 +4929,8 @@ describe("#documents.users", () => {
     expect(body.data[0].id).toContain(alan.id);
     expect(body.data[0].name).toBe(alan.name);
 
-    const anotherRes = await server.post("/api/documents.users", {
+    const anotherRes = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: jamie.id,
       },
@@ -5035,9 +4999,8 @@ describe("#documents.users", () => {
     alan.suspendedAt = new Date();
     await alan.save();
 
-    const res = await server.post("/api/documents.users", {
+    const res = await server.post("/api/documents.users", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -5053,14 +5016,142 @@ describe("#documents.users", () => {
   });
 });
 
+describe("document permission management authorization", () => {
+  it("should prevent collection read_write members from managing document users and groups", async () => {
+    const team = await buildTeam();
+    const actor = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      teamId: team.id,
+      permission: CollectionPermission.ReadWrite,
+    });
+    const document = await buildDocument({
+      teamId: team.id,
+      collectionId: collection.id,
+    });
+    const member = await buildUser({ teamId: team.id });
+    const group = await buildGroup({ teamId: team.id });
+
+    await expectCannotManageDocumentPermissions({
+      actor,
+      document,
+      member,
+      group,
+    });
+  });
+
+  it("should allow collection admins to manage document users and groups", async () => {
+    const team = await buildTeam();
+    const admin = await buildAdmin({ teamId: team.id });
+    const actor = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      teamId: team.id,
+      userId: admin.id,
+      permission: null,
+    });
+    const document = await buildDocument({
+      teamId: team.id,
+      collectionId: collection.id,
+    });
+    const member = await buildUser({ teamId: team.id });
+    const group = await buildGroup({ teamId: team.id });
+    await collection.$add("user", actor, {
+      through: {
+        permission: CollectionPermission.Admin,
+        createdById: admin.id,
+      },
+    });
+
+    await expectCanManageDocumentPermissions({
+      actor,
+      document,
+      member,
+      group,
+    });
+  });
+
+  it("should allow workspace admins with read access to manage document users and groups", async () => {
+    const team = await buildTeam();
+    const actor = await buildAdmin({ teamId: team.id });
+    const collection = await buildCollection({
+      teamId: team.id,
+      permission: CollectionPermission.Read,
+    });
+    const document = await buildDocument({
+      teamId: team.id,
+      collectionId: collection.id,
+    });
+    const member = await buildUser({ teamId: team.id });
+    const group = await buildGroup({ teamId: team.id });
+
+    await expectCanManageDocumentPermissions({
+      actor,
+      document,
+      member,
+      group,
+    });
+  });
+
+  it("should allow direct document admins to manage users and groups", async () => {
+    const team = await buildTeam();
+    const actor = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      teamId: team.id,
+      permission: null,
+    });
+    const document = await buildDocument({
+      teamId: team.id,
+      collectionId: collection.id,
+    });
+    const member = await buildUser({ teamId: team.id });
+    const group = await buildGroup({ teamId: team.id });
+    await UserMembership.create({
+      userId: actor.id,
+      documentId: document.id,
+      permission: DocumentPermission.Admin,
+      createdById: actor.id,
+    });
+
+    await expectCanManageDocumentPermissions({
+      actor,
+      document,
+      member,
+      group,
+    });
+  });
+
+  it("should prevent direct document read_write members from managing users and groups", async () => {
+    const team = await buildTeam();
+    const actor = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      teamId: team.id,
+      permission: null,
+    });
+    const document = await buildDocument({
+      teamId: team.id,
+      collectionId: collection.id,
+    });
+    const member = await buildUser({ teamId: team.id });
+    const group = await buildGroup({ teamId: team.id });
+    await UserMembership.create({
+      userId: actor.id,
+      documentId: document.id,
+      permission: DocumentPermission.ReadWrite,
+      createdById: actor.id,
+    });
+
+    await expectCannotManageDocumentPermissions({
+      actor,
+      document,
+      member,
+      group,
+    });
+  });
+});
+
 describe("#documents.add_user", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.add_user", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.add_user", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -5089,9 +5180,8 @@ describe("#documents.add_user", () => {
       teamId: user.teamId,
     });
 
-    const res = await server.post("/api/documents.add_user", {
+    const res = await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: user.id,
       },
@@ -5116,9 +5206,8 @@ describe("#documents.add_user", () => {
     });
     const member = await buildUser({ teamId: user.teamId });
 
-    const res = await server.post("/api/documents.add_user", {
+    const res = await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
@@ -5142,11 +5231,7 @@ describe("#documents.add_user", () => {
 describe("#documents.remove_user", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.remove_user", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.remove_user", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -5168,9 +5253,8 @@ describe("#documents.remove_user", () => {
     const anotherUser = await buildUser({
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.remove_user", {
+    const res = await server.post("/api/documents.remove_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: anotherUser.id,
       },
@@ -5193,18 +5277,16 @@ describe("#documents.remove_user", () => {
     const member = await buildUser({
       teamId: user.teamId,
     });
-    await server.post("/api/documents.add_user", {
+    await server.post("/api/documents.add_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
     });
     let users = await document.$get("users");
     expect(users.length).toEqual(1);
-    const res = await server.post("/api/documents.remove_user", {
+    const res = await server.post("/api/documents.remove_user", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         userId: member.id,
       },
@@ -5218,11 +5300,7 @@ describe("#documents.remove_user", () => {
 describe("#documents.add_group", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.add_group", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.add_group", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -5246,9 +5324,8 @@ describe("#documents.add_group", () => {
     const group = await buildGroup({
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.add_group", {
+    const res = await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5269,9 +5346,8 @@ describe("#documents.add_group", () => {
       teamId: user.teamId,
     });
     const group = await buildGroup();
-    const res = await server.post("/api/documents.add_group", {
+    const res = await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5294,9 +5370,8 @@ describe("#documents.add_group", () => {
     const group = await buildGroup({
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.add_group", {
+    const res = await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5332,9 +5407,8 @@ describe("#documents.add_group", () => {
     const group = await buildGroup({
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.add_group", {
+    const res = await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
         permission: DocumentPermission.Read,
@@ -5368,9 +5442,8 @@ describe("#documents.add_group", () => {
     });
 
     // First add with Read permission
-    await server.post("/api/documents.add_group", {
+    await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
         permission: DocumentPermission.Read,
@@ -5378,9 +5451,8 @@ describe("#documents.add_group", () => {
     });
 
     // Then update to ReadWrite permission
-    const res = await server.post("/api/documents.add_group", {
+    const res = await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
         permission: DocumentPermission.ReadWrite,
@@ -5411,11 +5483,7 @@ describe("#documents.add_group", () => {
 describe("#documents.remove_group", () => {
   it("should require id", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.remove_group", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.remove_group", user);
     const body = await res.json();
     expect(res.status).toEqual(400);
     expect(body.message).toEqual("id: Must be a valid UUID or slug");
@@ -5439,9 +5507,8 @@ describe("#documents.remove_group", () => {
     const group = await buildGroup({
       teamId: user.teamId,
     });
-    const res = await server.post("/api/documents.remove_group", {
+    const res = await server.post("/api/documents.remove_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5462,9 +5529,8 @@ describe("#documents.remove_group", () => {
       teamId: user.teamId,
     });
     const group = await buildGroup();
-    const res = await server.post("/api/documents.remove_group", {
+    const res = await server.post("/api/documents.remove_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5489,9 +5555,8 @@ describe("#documents.remove_group", () => {
     });
 
     // First add the group
-    await server.post("/api/documents.add_group", {
+    await server.post("/api/documents.add_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5503,9 +5568,8 @@ describe("#documents.remove_group", () => {
     expect(groupMemberships.length).toEqual(1);
 
     // Then remove the group
-    const res = await server.post("/api/documents.remove_group", {
+    const res = await server.post("/api/documents.remove_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5535,9 +5599,8 @@ describe("#documents.remove_group", () => {
     });
 
     // Try to remove group that was never added
-    const res = await server.post("/api/documents.remove_group", {
+    const res = await server.post("/api/documents.remove_group", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
         groupId: group.id,
       },
@@ -5569,24 +5632,21 @@ describe("#documents.memberships", () => {
       buildUser({ teamId: actor.teamId }),
     ]);
     await Promise.all([
-      server.post("/api/documents.add_user", {
+      server.post("/api/documents.add_user", actor, {
         body: {
-          token: actor.getJwtToken(),
           id: document.id,
           userId: members[0].id,
         },
       }),
-      server.post("/api/documents.add_user", {
+      server.post("/api/documents.add_user", actor, {
         body: {
-          token: actor.getJwtToken(),
           id: document.id,
           userId: members[1].id,
         },
       }),
     ]);
-    const res = await server.post("/api/documents.memberships", {
+    const res = await server.post("/api/documents.memberships", actor, {
       body: {
-        token: actor.getJwtToken(),
         id: document.id,
       },
     });
@@ -5607,26 +5667,23 @@ describe("#documents.memberships", () => {
       buildUser({ teamId: actor.teamId }),
     ]);
     await Promise.all([
-      server.post("/api/documents.add_user", {
+      server.post("/api/documents.add_user", actor, {
         body: {
-          token: actor.getJwtToken(),
           id: document.id,
           userId: members[0].id,
           permission: DocumentPermission.ReadWrite,
         },
       }),
-      server.post("/api/documents.add_user", {
+      server.post("/api/documents.add_user", actor, {
         body: {
-          token: actor.getJwtToken(),
           id: document.id,
           userId: members[1].id,
           permission: DocumentPermission.Read,
         },
       }),
     ]);
-    const res = await server.post("/api/documents.memberships", {
+    const res = await server.post("/api/documents.memberships", actor, {
       body: {
-        token: actor.getJwtToken(),
         id: document.id,
         permission: DocumentPermission.Read,
       },
@@ -5652,9 +5709,8 @@ describe("#documents.duplicate", () => {
       fullWidth: true,
     });
 
-    const res = await server.post("/api/documents.duplicate", {
+    const res = await server.post("/api/documents.duplicate", user, {
       body: {
-        token: user.getJwtToken(),
         id: document.id,
       },
     });
@@ -5685,9 +5741,8 @@ describe("#documents.duplicate", () => {
       fullWidth: true,
     });
 
-    const res = await server.post("/api/documents.duplicate", {
+    const res = await server.post("/api/documents.duplicate", user, {
       body: {
-        token: user.getJwtToken(),
         id: parent.id,
         recursive: true,
       },
@@ -5710,22 +5765,14 @@ describe("#documents.empty_trash", () => {
   });
   it("should allow admin users", async () => {
     const user = await buildAdmin();
-    const res = await server.post("/api/documents.empty_trash", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.empty_trash", user);
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.success).toEqual(true);
   });
   it("should not allow non-admin users", async () => {
     const user = await buildUser();
-    const res = await server.post("/api/documents.empty_trash", {
-      body: {
-        token: user.getJwtToken(),
-      },
-    });
+    const res = await server.post("/api/documents.empty_trash", user);
     const body = await res.json();
     expect(res.status).toEqual(403);
     expect(body).toMatchSnapshot();
@@ -5759,9 +5806,8 @@ describe("#documents.documents", () => {
       title: "Child 2",
     });
 
-    const res = await server.post("/api/documents.documents", {
+    const res = await server.post("/api/documents.documents", user, {
       body: {
-        token: user.getJwtToken(),
         id: parent.id,
       },
     });
@@ -5786,9 +5832,8 @@ describe("#documents.documents", () => {
       teamId: user.teamId,
     });
 
-    const res = await server.post("/api/documents.documents", {
+    const res = await server.post("/api/documents.documents", user, {
       body: {
-        token: user.getJwtToken(),
         id: parent.id,
       },
     });
@@ -5807,9 +5852,8 @@ describe("#documents.documents", () => {
       collectionId: null,
     });
 
-    const res = await server.post("/api/documents.documents", {
+    const res = await server.post("/api/documents.documents", user, {
       body: {
-        token: user.getJwtToken(),
         id: doc.id,
       },
     });
@@ -5856,9 +5900,8 @@ describe("#documents.documents", () => {
       teamId: otherUser.teamId,
     });
 
-    const res = await server.post("/api/documents.documents", {
+    const res = await server.post("/api/documents.documents", user, {
       body: {
-        token: user.getJwtToken(),
         id: parent.id,
       },
     });

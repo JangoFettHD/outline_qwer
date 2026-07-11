@@ -7,7 +7,6 @@ import { baseKeymap } from "prosemirror-commands";
 import { dropCursor } from "prosemirror-dropcursor";
 import { gapCursor } from "prosemirror-gapcursor";
 import type { InputRule } from "prosemirror-inputrules";
-import { inputRules } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import type { NodeSpec, MarkSpec } from "prosemirror-model";
 import { Schema, Node as ProsemirrorNode } from "prosemirror-model";
@@ -31,11 +30,16 @@ import type { EmbedDescriptor } from "@shared/editor/embeds";
 import type { CommandFactory, WidgetProps } from "@shared/editor/lib/Extension";
 import type { AnyExtension, AnyExtensionClass } from "@shared/editor/lib/types";
 import ExtensionManager from "@shared/editor/lib/ExtensionManager";
+import { inputRules } from "@shared/editor/lib/inputRules";
 import type { MarkdownSerializer } from "@shared/editor/lib/markdown/serializer";
+import { isRemoteTransaction } from "@shared/editor/lib/multiplayer";
 import textBetween from "@shared/editor/lib/textBetween";
 import { basicExtensions as extensions } from "@shared/editor/nodes";
 import type ReactNode from "@shared/editor/nodes/ReactNode";
-import type { ComponentProps } from "@shared/editor/types";
+import type {
+  ComponentProps,
+  SelectionToolbarMenuDescriptor,
+} from "@shared/editor/types";
 import type {
   ProsemirrorData,
   ProsemirrorMark,
@@ -115,8 +119,11 @@ export type Props = {
   /** Callback when user uses cancel key combo */
   onCancel?: () => void;
   /** Callback when user changes editor content */
-  // oxlint-disable-next-line @typescript-eslint/no-explicit-any
-  onChange?: (value: (asString?: boolean, trim?: boolean) => any) => void;
+  onChange?: (
+    // oxlint-disable-next-line @typescript-eslint/no-explicit-any
+    value: (asString?: boolean, trim?: boolean) => any,
+    event?: { remote: boolean }
+  ) => void;
   /** Callback when a comment mark is clicked */
   onClickCommentMark?: (commentId: string) => void;
   /**
@@ -228,6 +235,7 @@ export class Editor extends React.PureComponent<
   nodes: { [name: string]: NodeSpec };
   marks: { [name: string]: MarkSpec };
   commands: Record<string, CommandFactory>;
+  selectionToolbarMenus: SelectionToolbarMenuDescriptor[];
   rulePlugins: PluginSimple[];
   events = new EventEmitter();
   mutationObserver?: MutationObserver;
@@ -341,6 +349,7 @@ export class Editor extends React.PureComponent<
 
     this.view = this.createView();
     this.commands = this.createCommands();
+    this.selectionToolbarMenus = this.extensions.selectionToolbarMenus;
   }
 
   private createExtensions() {
@@ -532,7 +541,11 @@ export class Editor extends React.PureComponent<
             (self.props.canUpdate && transactions.some(isEditingCheckbox)) ||
             (self.props.canComment && transactions.some(isEditingComment)))
         ) {
-          self.handleChange();
+          self.handleChange({
+            remote: transactions.some(
+              (tr) => tr.docChanged && isRemoteTransaction(tr)
+            ),
+          });
         }
 
         self.handleEditorInit();
@@ -572,12 +585,18 @@ export class Editor extends React.PureComponent<
       this.mutationObserver = observe(
         hash,
         (element) => {
-          const pos = this.view.posAtDOM(element, 0, 1);
-          this.view.dispatch(
-            this.view.state.tr.setSelection(
-              TextSelection.near(this.view.state.doc.resolve(pos), 1)
-            )
-          );
+          try {
+            const pos = this.view.posAtDOM(element, 0, 1);
+            if (pos >= 0 && pos <= this.view.state.doc.content.size) {
+              this.view.dispatch(
+                this.view.state.tr.setSelection(
+                  TextSelection.near(this.view.state.doc.resolve(pos), 1)
+                )
+              );
+            }
+          } catch (_err) {
+            // posAtDOM may throw if the element is not part of the editor doc
+          }
 
           if (isVisible(element)) {
             element.scrollIntoView();
@@ -837,13 +856,15 @@ export class Editor extends React.PureComponent<
     this.view.dispatch(this.view.state.tr.setMeta("theme", event.detail));
   };
 
-  private handleChange = () => {
+  private handleChange = (event?: { remote: boolean }) => {
     if (!this.props.onChange) {
       return;
     }
 
-    this.props.onChange((asString = true, trim = false) =>
-      this.view ? this.value(asString, trim) : undefined
+    this.props.onChange(
+      (asString = true, trim = false) =>
+        this.view ? this.value(asString, trim) : undefined,
+      event
     );
   };
 

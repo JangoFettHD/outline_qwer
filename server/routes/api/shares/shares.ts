@@ -56,7 +56,7 @@ router.post(
     const { id, collectionId, documentId } = ctx.input.body;
     const { user } = ctx.state.auth;
     const teamFromCtx = await getTeamFromContext(ctx, {
-      includeStateCookie: false,
+      includeOAuthState: false,
     });
 
     // only public link loads will send "id".
@@ -139,7 +139,7 @@ router.post(
         policies: presentPolicies(user, shares),
       };
     } catch (err) {
-      if (err.id === "not_found") {
+      if (err instanceof Error && "id" in err && err.id === "not_found") {
         ctx.response.status = 204;
         return;
       }
@@ -294,16 +294,6 @@ router.post(
       authorize(user, "read", collection);
     }
 
-    if (published) {
-      authorize(user, "share", user.team);
-      if (document) {
-        authorize(user, "share", document);
-      }
-      if (collection) {
-        authorize(user, "share", collection);
-      }
-    }
-
     const [share] = await Share.findOrCreateWithCtx(ctx, {
       where: {
         collectionId: collectionId ?? null,
@@ -322,6 +312,16 @@ router.post(
         urlId,
       },
     });
+
+    if (share.published) {
+      authorize(user, "share", user.team);
+      if (document) {
+        authorize(user, "share", document);
+      }
+      if (collection) {
+        authorize(user, "share", collection);
+      }
+    }
 
     share.team = user.team;
     share.user = user;
@@ -440,7 +440,7 @@ router.get(
   validate(T.SharesSitemapSchema),
   async (ctx: APIContext<T.SharesSitemapReq>) => {
     const { id } = ctx.input.query;
-    const team = await getTeamFromContext(ctx, { includeStateCookie: false });
+    const team = await getTeamFromContext(ctx, { includeOAuthState: false });
 
     const { share, sharedTree } = await loadPublicShare({
       id,
@@ -473,7 +473,7 @@ router.post(
 
     const { shareId, documentId, email } = ctx.input.body;
     const { transaction } = ctx.state;
-    const team = await getTeamFromContext(ctx, { includeStateCookie: false });
+    const team = await getTeamFromContext(ctx, { includeOAuthState: false });
 
     // Validate the share exists and is published
     const { share, document } = await loadPublicShare({

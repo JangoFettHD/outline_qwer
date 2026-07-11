@@ -586,7 +586,7 @@ export class NotionConverter {
 
   private static table(
     item: TableBlockObjectResponse & {
-      children: Array<{
+      children?: Array<{
         table_row: {
           cells: Array<Array<RichTextItemResponse>>;
         };
@@ -595,6 +595,11 @@ export class NotionConverter {
       }>;
     }
   ) {
+    // A table with no rows is invalid content, skip it entirely.
+    if (!item.children?.length) {
+      return undefined;
+    }
+
     return {
       type: "table",
       content: item.children.map((tr, y) => ({

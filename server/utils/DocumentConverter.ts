@@ -1,8 +1,4 @@
-import { parse } from "@fast-csv/parse";
-import { JSDOM } from "jsdom";
 import { escapeRegExp } from "es-toolkit/compat";
-import { simpleParser } from "mailparser";
-import mammoth from "mammoth";
 import type { Node } from "prosemirror-model";
 import { DOMParser as ProsemirrorDOMParser } from "prosemirror-model";
 import yaml from "js-yaml";
@@ -22,6 +18,9 @@ export interface ConvertResult {
   icon?: string;
 }
 
+/**
+ * Converts incoming files of various formats to structured documents.
+ */
 @trace()
 export class DocumentConverter {
   /**
@@ -30,19 +29,26 @@ export class DocumentConverter {
    * @param content The content of the file.
    * @param fileName The name of the file, including extension.
    * @param mimeType The mime type of the file.
+   * @param options Conversion options.
+   * @param options.extractTitle Whether a leading H1 heading should be lifted
+   *   out as the document title and removed from the body. Defaults to true;
+   *   set false for sources where the filename is authoritative and the first
+   *   heading must remain part of the content (e.g. Slab).
    * @returns The converted document with text, data, title, and icon.
    */
   public static async convert(
     content: Buffer | string,
     fileName: string,
-    mimeType: string
+    mimeType: string,
+    options: { extractTitle?: boolean } = {}
   ): Promise<ConvertResult> {
+    const { extractTitle = true } = options;
     let doc: Node;
 
     // Route to appropriate conversion method
     const html = await this.convertToHtml(content, fileName, mimeType);
     if (html !== undefined) {
-      doc = this.htmlToProsemirror(html);
+      doc = await this.htmlToProsemirror(html);
     } else {
       const markdown = await this.convertToMarkdown(
         content,
@@ -54,10 +60,12 @@ export class DocumentConverter {
 
     // Extract title from first H1 heading
     let title = "";
-    const headings = ProsemirrorHelper.getHeadings(doc);
-    if (headings.length > 0 && headings[0].level === 1) {
-      title = headings[0].title;
-      doc = ProsemirrorHelper.removeFirstHeading(doc);
+    if (extractTitle) {
+      const headings = ProsemirrorHelper.getHeadings(doc);
+      if (headings.length > 0 && headings[0].level === 1) {
+        title = headings[0].title;
+        doc = ProsemirrorHelper.removeFirstHeading(doc);
+      }
     }
 
     // Extract emoji from start of document
@@ -82,11 +90,15 @@ export class DocumentConverter {
    * @param content The HTML content as a string or Buffer.
    * @returns A Prosemirror Node representing the document.
    */
-  public static htmlToProsemirror(content: Buffer | string): Node {
+  public static async htmlToProsemirror(
+    content: Buffer | string
+  ): Promise<Node> {
     if (typeof content !== "string") {
       content = content.toString("utf8");
     }
 
+    // Loaded lazily to keep jsdom off the startup path — only HTML imports need it.
+    const { JSDOM } = await import("jsdom");
     const dom = new JSDOM(content);
     const document = dom.window.document;
 
@@ -259,6 +271,8 @@ export class DocumentConverter {
    */
   private static async docxToHtml(content: Buffer | string): Promise<string> {
     if (content instanceof Buffer) {
+      // Loaded lazily to keep mammoth off the startup path — only docx imports need it.
+      const mammoth = (await import("mammoth")).default;
       const { value } = await traceFunction({ spanName: "convertToHtml" })(
         mammoth.convertToHtml
       )({
@@ -289,7 +303,9 @@ export class DocumentConverter {
     }
 
     // Confluence "Word" documents are actually just multi-part email messages, so we can use
-    // mailparser to parse the content.
+    // mailparser to parse the content. Loaded lazily to keep mailparser off the startup path —
+    // only Confluence Word imports need it.
+    const { simpleParser } = await import("mailparser");
     const parsed = await simpleParser(content);
     if (!parsed.html) {
       throw FileImportError("Unsupported Word file (No content found)");
@@ -323,7 +339,12 @@ export class DocumentConverter {
    * @param content The CSV file content.
    * @returns A markdown table representation.
    */
-  private static csvToMarkdown(content: Buffer | string): Promise<string> {
+  private static async csvToMarkdown(
+    content: Buffer | string
+  ): Promise<string> {
+    // Loaded lazily to keep @fast-csv off the startup path — only CSV imports need it.
+    const { parse } = await import("@fast-csv/parse");
+
     return new Promise((resolve, reject) => {
       const text = this.bufferToString(content).trim();
       const textLines = text.split("\n");

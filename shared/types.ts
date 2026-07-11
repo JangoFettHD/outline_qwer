@@ -97,6 +97,21 @@ export enum ImportTaskState {
   Canceled = "canceled",
 }
 
+/**
+ * Classifies the work an `ImportTask` row represents. Set when the task is
+ * created and used by `APIImportTask` to dispatch to the right handler.
+ *
+ * - `Bootstrap` runs once per import on a worker that owns the source
+ *   artifact (e.g. extracts a zip, discovers structure, schedules child
+ *   tasks). Subclasses without a bootstrap step never produce these.
+ * - `Page` is the per-document work that the bootstrap (or `ImportsProcessor`
+ *   for sources without a bootstrap, like Notion) fans out into.
+ */
+export enum ImportTaskPhase {
+  Bootstrap = "bootstrap",
+  Page = "page",
+}
+
 export enum MentionType {
   User = "user",
   Document = "document",
@@ -106,6 +121,7 @@ export enum MentionType {
   PullRequest = "pull_request",
   Project = "project",
   URL = "url",
+  Date = "date",
 }
 
 export type PublicEnv = {
@@ -151,15 +167,24 @@ export enum IntegrationService {
   Linear = "linear",
   Figma = "figma",
   Notion = "notion",
+  Markdown = "markdown",
+  Slab = "slab",
+  JSON = "json",
 }
 
 export type ImportableIntegrationService = Extract<
   IntegrationService,
-  IntegrationService.Notion
+  | IntegrationService.Notion
+  | IntegrationService.Markdown
+  | IntegrationService.Slab
+  | IntegrationService.JSON
 >;
 
 export const ImportableIntegrationService = {
   Notion: IntegrationService.Notion,
+  Markdown: IntegrationService.Markdown,
+  Slab: IntegrationService.Slab,
+  JSON: IntegrationService.JSON,
 } as const;
 
 export type IssueTrackerIntegrationService = Extract<
@@ -317,6 +342,8 @@ export enum UserPreference {
   FullWidthDocuments = "fullWidthDocuments",
   /** Whether to sort the comments by their order in the document. */
   SortCommentsByOrderInDocument = "sortCommentsByOrderInDocument",
+  /** Whether to display a comment indicator in the gutter beside commented lines. */
+  CommentsInGutter = "commentsInGutter",
   /** Whether smart text replacements should be enabled. */
   EnableSmartText = "enableSmartText",
   /** The style of notification badge to display. */
@@ -339,6 +366,7 @@ export type UserPreferences = {
   [UserPreference.SeamlessEdit]?: boolean;
   [UserPreference.FullWidthDocuments]?: boolean;
   [UserPreference.SortCommentsByOrderInDocument]?: boolean;
+  [UserPreference.CommentsInGutter]?: boolean;
   [UserPreference.EnableSmartText]?: boolean;
   [UserPreference.NotificationBadge]?: NotificationBadgeType;
 };
@@ -383,6 +411,15 @@ export enum EmailDisplay {
   Everyone = "everyone",
 }
 
+export enum CommentingAccess {
+  /** No one can comment. */
+  None = "none",
+  /** Only members can comment. */
+  Members = "members",
+  /** Members and guests can comment. */
+  Everyone = "everyone",
+}
+
 export enum TeamPreference {
   /** Whether documents have a separate edit mode instead of always editing. */
   SeamlessEdit = "seamlessEdit",
@@ -398,7 +435,7 @@ export enum TeamPreference {
   MembersCanDeleteAccount = "membersCanDeleteAccount",
   /** Whether notification emails include document and comment content. */
   PreviewsInEmails = "previewsInEmails",
-  /** Whether users can comment on documents. */
+  /** Who can comment on documents. */
   Commenting = "commenting",
   /** The custom theme for the team. */
   CustomTheme = "customTheme",
@@ -426,7 +463,7 @@ export type TeamPreferences = {
   [TeamPreference.MembersCanCreateApiKey]?: boolean;
   [TeamPreference.MembersCanDeleteAccount]?: boolean;
   [TeamPreference.PreviewsInEmails]?: boolean;
-  [TeamPreference.Commenting]?: boolean;
+  [TeamPreference.Commenting]?: CommentingAccess;
   [TeamPreference.CustomTheme]?: Partial<CustomTheme>;
   [TeamPreference.TocPosition]?: TOCPosition;
   [TeamPreference.PreventDocumentEmbedding]?: boolean;

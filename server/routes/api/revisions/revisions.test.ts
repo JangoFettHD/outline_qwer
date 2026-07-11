@@ -21,9 +21,8 @@ describe("#revisions.info", () => {
       createContext({ user }),
       document
     );
-    const res = await server.post("/api/revisions.info", {
+    const res = await server.post("/api/revisions.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
       },
     });
@@ -31,6 +30,9 @@ describe("#revisions.info", () => {
     expect(res.status).toEqual(200);
     expect(body.data.id).not.toEqual(document.id);
     expect(body.data.title).toEqual(document.title);
+    // The single revision endpoint includes the full document content.
+    expect(body.data.data).toBeDefined();
+    expect(body.data.text).toBeDefined();
   });
 
   it("should require authorization", async () => {
@@ -44,9 +46,8 @@ describe("#revisions.info", () => {
       document
     );
     const user = await buildUser();
-    const res = await server.post("/api/revisions.info", {
+    const res = await server.post("/api/revisions.info", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
       },
     });
@@ -66,9 +67,8 @@ describe("#revisions.update", () => {
       document
     );
 
-    const res = await server.post("/api/revisions.update", {
+    const res = await server.post("/api/revisions.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
         name: "new name",
       },
@@ -89,9 +89,8 @@ describe("#revisions.update", () => {
       document
     );
 
-    const res = await server.post("/api/revisions.update", {
+    const res = await server.post("/api/revisions.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
         name: null,
       },
@@ -112,9 +111,8 @@ describe("#revisions.update", () => {
       document
     );
 
-    const res = await server.post("/api/revisions.update", {
+    const res = await server.post("/api/revisions.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
         name: "",
       },
@@ -133,9 +131,8 @@ describe("#revisions.update", () => {
       document
     );
 
-    const res = await server.post("/api/revisions.update", {
+    const res = await server.post("/api/revisions.update", admin, {
       body: {
-        token: admin.getJwtToken(),
         id: revision.id,
         name: "new name",
       },
@@ -156,9 +153,8 @@ describe("#revisions.update", () => {
       document
     );
     const user = await buildUser();
-    const res = await server.post("/api/revisions.update", {
+    const res = await server.post("/api/revisions.update", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
         name: "new name",
       },
@@ -175,9 +171,8 @@ describe("#revisions.list", () => {
       teamId: user.teamId,
     });
     await Revision.createFromDocument(createContext({ user }), document);
-    const res = await server.post("/api/revisions.list", {
+    const res = await server.post("/api/revisions.list", user, {
       body: {
-        token: user.getJwtToken(),
         documentId: document.id,
       },
     });
@@ -186,6 +181,27 @@ describe("#revisions.list", () => {
     expect(body.data.length).toEqual(1);
     expect(body.data[0].id).not.toEqual(document.id);
     expect(body.data[0].title).toEqual(document.title);
+  });
+
+  it("should not include document content for listed revisions", async () => {
+    const user = await buildUser();
+    const document = await buildDocument({
+      userId: user.id,
+      teamId: user.teamId,
+    });
+    await Revision.createFromDocument(createContext({ user }), document);
+    const res = await server.post("/api/revisions.list", user, {
+      body: {
+        documentId: document.id,
+      },
+    });
+    const body = await res.json();
+    expect(res.status).toEqual(200);
+    expect(body.data.length).toEqual(1);
+    // The (potentially large) content is omitted from the list response and
+    // only loaded when a single revision is opened via revisions.info.
+    expect(body.data[0].data).toBeUndefined();
+    expect(body.data[0].text).toBeUndefined();
   });
 
   it("should not return revisions for document in collection not a member of", async () => {
@@ -208,9 +224,8 @@ describe("#revisions.list", () => {
         collectionId: collection.id,
       },
     });
-    const res = await server.post("/api/revisions.list", {
+    const res = await server.post("/api/revisions.list", user, {
       body: {
-        token: user.getJwtToken(),
         documentId: document.id,
       },
     });
@@ -220,9 +235,8 @@ describe("#revisions.list", () => {
   it("should require authorization", async () => {
     const document = await buildDocument();
     const user = await buildUser();
-    const res = await server.post("/api/revisions.list", {
+    const res = await server.post("/api/revisions.list", user, {
       body: {
-        token: user.getJwtToken(),
         documentId: document.id,
       },
     });
@@ -241,9 +255,8 @@ describe("#revisions.export", () => {
       createContext({ user }),
       document
     );
-    const res = await server.post("/api/revisions.export", {
+    const res = await server.post("/api/revisions.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
       },
     });
@@ -262,9 +275,8 @@ describe("#revisions.export", () => {
       createContext({ user }),
       document
     );
-    const res = await server.post("/api/revisions.export", {
+    const res = await server.post("/api/revisions.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
       },
       headers: {
@@ -286,9 +298,8 @@ describe("#revisions.export", () => {
       createContext({ user }),
       document
     );
-    const res = await server.post("/api/revisions.export", {
+    const res = await server.post("/api/revisions.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
       },
       headers: {
@@ -330,9 +341,8 @@ describe("#revisions.export", () => {
       document
     );
     const user = await buildUser();
-    const res = await server.post("/api/revisions.export", {
+    const res = await server.post("/api/revisions.export", user, {
       body: {
-        token: user.getJwtToken(),
         id: revision.id,
       },
     });

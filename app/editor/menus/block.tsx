@@ -17,7 +17,6 @@ import {
   WarningIcon,
   InfoIcon,
   AttachmentIcon,
-  ClockIcon,
   CalendarIcon,
   MathIcon,
   DoneIcon,
@@ -26,9 +25,12 @@ import {
 } from "outline-icons";
 import * as React from "react";
 import styled from "styled-components";
+import { v4 as uuidv4 } from "uuid";
 import type { TFunction } from "i18next";
 import Image from "@shared/editor/components/Img";
 import type { MenuItem } from "@shared/editor/types";
+import { MentionType } from "@shared/types";
+import { toISODate } from "@shared/utils/date";
 import { metaDisplay } from "@shared/utils/keyboard";
 import Desktop from "~/utils/Desktop";
 
@@ -149,8 +151,6 @@ export default function blockMenuItems(
       keywords: "pdf upload attach",
       attrs: {
         accept: "application/pdf",
-        width: 300,
-        height: 424,
         preview: true,
       },
     },
@@ -191,12 +191,6 @@ export default function blockMenuItems(
       keywords: "math katex latex",
     },
     {
-      name: "container_toggle",
-      title: t("Toggle block"),
-      icon: <CollapseIcon />,
-      keywords: "toggle collapsible collapse fold",
-    },
-    {
       name: "hr",
       title: t("Divider"),
       icon: <HorizontalRuleIcon />,
@@ -211,22 +205,59 @@ export default function blockMenuItems(
       attrs: { markup: "***" },
     },
     {
-      name: "date",
+      // Inserts a date mention for today. Supersedes the deprecated "Current
+      // date/time" commands that inserted a static string or template token.
+      name: "mention",
       title: t("Current date"),
-      keywords: "clock today",
+      keywords: "clock today date time now",
       icon: <CalendarIcon />,
+      appendSpace: true,
+      attrs: () => {
+        const modelId = toISODate(new Date());
+        return {
+          id: uuidv4(),
+          type: MentionType.Date,
+          modelId,
+          label: modelId,
+        };
+      },
     },
     {
-      name: "time",
-      title: t("Current time"),
-      keywords: "clock now",
-      icon: <ClockIcon />,
+      name: "separator",
     },
     {
-      name: "datetime",
-      title: t("Current date and time"),
-      keywords: "clock today date",
-      icon: <CalendarIcon />,
+      name: "container_toggle",
+      title: t("Toggle block"),
+      icon: <CollapseIcon />,
+      keywords: "toggle collapsible collapse fold",
+    },
+    {
+      name: "container_toggle",
+      title: t("Big toggle heading"),
+      icon: <Heading1Icon />,
+      keywords: "toggle collapsible collapse fold heading h1",
+      attrs: { level: 1 },
+    },
+    {
+      name: "container_toggle",
+      title: t("Medium toggle heading"),
+      icon: <Heading2Icon />,
+      keywords: "toggle collapsible collapse fold heading h2",
+      attrs: { level: 2 },
+    },
+    {
+      name: "container_toggle",
+      title: t("Small toggle heading"),
+      icon: <Heading3Icon />,
+      keywords: "toggle collapsible collapse fold heading h3",
+      attrs: { level: 3 },
+    },
+    {
+      name: "container_toggle",
+      title: t("Extra small toggle heading"),
+      icon: <Heading4Icon />,
+      keywords: "toggle collapsible collapse fold heading h4",
+      attrs: { level: 4 },
     },
     {
       name: "separator",

@@ -15,6 +15,7 @@ import {
   getTeamFromContext,
   getClientFromOAuthState,
   getUserFromOAuthState,
+  startOAuthFlow,
 } from "@server/utils/passport";
 import config from "../../plugin.json";
 import env from "../env";
@@ -154,6 +155,11 @@ if (
               email,
               name: fullName,
               avatarUrl,
+              // Bitrix24 portal accounts are provisioned by the workspace
+              // admin, so the address is trustworthy. Without this flag
+              // userProvisioner (v1.9+) rejects email-matched sign-ins with
+              // InvalidAuthenticationError.
+              emailVerified: true,
             },
             authenticationProvider: {
               name: config.id,
@@ -176,7 +182,9 @@ if (
     )
   );
 
-  router.get(config.id, passport.authenticate(config.id));
+  // startOAuthFlow (v1.9+) bridges a signed-in actor through the OAuth
+  // round-trip when the flow starts from a custom team domain.
+  router.get(config.id, startOAuthFlow, passport.authenticate(config.id));
   router.get(`${config.id}.callback`, passportMiddleware(config.id));
 }
 

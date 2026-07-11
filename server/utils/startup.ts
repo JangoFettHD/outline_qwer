@@ -1,5 +1,6 @@
 import { styleText } from "node:util";
 import { isEmpty } from "es-toolkit/compat";
+import { toError, errToString } from "@shared/utils/error";
 import env from "@server/env";
 import Logger from "@server/logging/Logger";
 import AuthenticationProvider from "@server/models/AuthenticationProvider";
@@ -9,6 +10,10 @@ import { getArg } from "./args";
 import { MutexLock } from "./MutexLock";
 import { Minute } from "@shared/utils/time";
 
+/**
+ * Checks for pending database migrations on startup and runs them, unless the
+ * --no-migrate flag was passed in which case the process exits with an error.
+ */
 export async function checkPendingMigrations() {
   let lock;
   try {
@@ -33,16 +38,18 @@ export async function checkPendingMigrations() {
     }
     await checkDataMigrations();
   } catch (err) {
-    if (err.message.includes("ECONNREFUSED")) {
+    const message = errToString(err);
+    const error = toError(err);
+    if (message.includes("ECONNREFUSED")) {
       Logger.fatal(
         styleText(
           "red",
           `Could not connect to the database. Please check your connection settings.`
         ),
-        err
+        error
       );
     } else {
-      Logger.fatal(styleText("red", err.message), err);
+      Logger.fatal(styleText("red", message), error);
     }
   } finally {
     if (lock) {
@@ -51,6 +58,10 @@ export async function checkPendingMigrations() {
   }
 }
 
+/**
+ * Checks whether a required data migration has been completed for self-hosted
+ * installations, exiting the process with instructions if it has not.
+ */
 export async function checkDataMigrations() {
   if (env.isCloudHosted) {
     return;
@@ -78,6 +89,9 @@ $ node ./build/server/scripts/20210226232041-migrate-authentication.js
   }
 }
 
+/**
+ * Prints information about the current environment to the log on startup.
+ */
 export async function printEnv() {
   if (env.isProduction) {
     Logger.info(

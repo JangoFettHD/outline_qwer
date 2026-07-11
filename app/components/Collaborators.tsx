@@ -41,11 +41,15 @@ function Collaborators(props: Props) {
     [documentPresence]
   );
 
-  // Use Set for O(1) lookups and stable references
-  const presentIds = useMemo(
-    () => new Set(documentPresenceArray.map((p) => p.userId)),
-    [documentPresenceArray]
-  );
+  // Use Set for O(1) lookups and stable references. The current user is
+  // always included to avoid a flash while the multiplayer connection forms.
+  const presentIds = useMemo(() => {
+    const ids = new Set(documentPresenceArray.map((p) => p.userId));
+    if (currentUserId) {
+      ids.add(currentUserId);
+    }
+    return ids;
+  }, [documentPresenceArray, currentUserId]);
   const editingIds = useMemo(
     () =>
       new Set(
@@ -79,10 +83,10 @@ function Collaborators(props: Props) {
   // Memoize ids to avoid unnecessary effect executions
   const missingUserIds = useMemo(
     () =>
-      uniq([...document.collaboratorIds, ...Array.from(presentIds)])
+      uniq([...collaboratorIdsSet, ...presentIds])
         .filter((userId) => !users.get(userId))
         .sort(),
-    [document.collaboratorIds, presentIds, users]
+    [collaboratorIdsSet, presentIds, users]
   );
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { toError } from "@shared/utils/error";
 import { Day } from "@shared/utils/time";
 import Logger from "@server/logging/Logger";
 import Redis from "@server/storage/redis";
@@ -54,7 +55,7 @@ export class CacheHelper {
       try {
         lock = await MutexLock.acquire(lockKey, lockTimeout);
       } catch (err) {
-        Logger.error(`Could not acquire lock for ${key}`, err);
+        Logger.error(`Could not acquire lock for ${key}`, toError(err));
       }
       cache = await this.getData<T>(key);
       if (cache) {
@@ -100,7 +101,10 @@ export class CacheHelper {
       }
     } catch (err) {
       // just log it, response can still be obtained using the fetch call
-      Logger.error(`Could not fetch cached response against ${key}`, err);
+      Logger.error(
+        `Could not fetch cached response against ${key}`,
+        toError(err)
+      );
     }
     return;
   }
@@ -122,7 +126,7 @@ export class CacheHelper {
       );
     } catch (err) {
       // just log it, can skip caching and directly return response
-      Logger.error(`Could not cache response against ${key}`, err);
+      Logger.error(`Could not cache response against ${key}`, toError(err));
     }
   }
 
@@ -135,22 +139,65 @@ export class CacheHelper {
     try {
       await Redis.defaultClient.del(key);
     } catch (err) {
-      Logger.error(`Could not remove cached entry against ${key}`, err);
+      Logger.error(
+        `Could not remove cached entry against ${key}`,
+        toError(err)
+      );
     }
   }
 
   /**
-   * Clears all cache data with the given prefix
+   * Clears all cache data with the given prefix. Keys are discovered with an
+   * incremental SCAN rather than KEYS and each batch is removed with UNLINK
+   * as the scan progresses, so neither discovery nor deletion blocks the
+   * Redis event loop and matched keys are never buffered in full.
    *
    * @param prefix Prefix to clear cache data
    */
   public static async clearData(prefix: string) {
-    const keys = await Redis.defaultClient.keys(`${prefix}*`);
+    const match = `${prefix}*`;
 
-    await Promise.all(
-      keys.map(async (key) => {
-        await Redis.defaultClient.del(key);
-      })
-    );
+    try {
+      // Deleting keys while a scan is in progress can skip keys in some
+      // Redis-compatible implementations, so repeat until a full pass finds
+      // nothing to delete. With real Redis the final pass is a single
+      // confirming sweep.
+      for (let pass = 0; pass < CacheHelper.maxClearPasses; pass++) {
+        let deleted = 0;
+        let cursor = "0";
+
+        do {
+          const [nextCursor, keys] = await Redis.defaultClient.scan(
+            cursor,
+            "MATCH",
+            match,
+            "COUNT",
+            CacheHelper.scanPageSize
+          );
+          cursor = nextCursor;
+
+          if (keys.length > 0) {
+            await Redis.defaultClient.unlink(...keys);
+            deleted += keys.length;
+          }
+        } while (cursor !== "0");
+
+        if (deleted === 0) {
+          break;
+        }
+      }
+    } catch (err) {
+      Logger.error(
+        `Could not clear cached data for prefix ${prefix}`,
+        toError(err)
+      );
+    }
   }
+
+  // Number of keys to request per SCAN iteration when clearing by prefix
+  private static readonly scanPageSize = 1000;
+
+  // Upper bound on full scan+delete passes in clearData, guarding against a
+  // pathological loop if matching keys are written as fast as they are cleared
+  private static readonly maxClearPasses = 10;
 }

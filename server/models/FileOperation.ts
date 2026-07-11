@@ -70,13 +70,13 @@ class FileOperation extends ParanoidModel<
   @Column(DataType.ENUM(...Object.values(FileOperationState)))
   state: FileOperationState;
 
-  @Column
+  @Column(DataType.STRING)
   key: string;
 
-  @Column
+  @Column(DataType.STRING)
   url?: string | null;
 
-  @Column
+  @Column(DataType.STRING)
   error: string | null;
 
   @Column(DataType.BIGINT)
@@ -91,12 +91,12 @@ class FileOperation extends ParanoidModel<
   /**
    * Mark the current file operation as expired and remove the file from storage.
    */
-  expire = async function () {
+  expire = async () => {
     this.state = FileOperationState.Expired;
     try {
       await FileStorage.deleteFile(this.key);
     } catch (err) {
-      if (err.retryable) {
+      if (err instanceof Error && "retryable" in err && err.retryable) {
         throw err;
       }
     }

@@ -1,6 +1,7 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { errToString } from "@shared/utils/error";
 import { Collection, type Team, type User } from "@server/models";
 import { addTags } from "@server/logging/tracer";
 import { traceFunction } from "@server/logging/tracing";
@@ -67,11 +68,20 @@ export function optionalString() {
 /**
  * Helper function to format successful MCP tool responses.
  *
+ * Empty arrays return a single `[]` text block so MCP clients that reject
+ * `content: []` can still distinguish zero results from a broken response.
+ *
  * @param data - the data to include in the response.
  * @returns a formatted response object for MCP tools.
  */
 export function success<T>(data: T | T[]): CallToolResult {
   const payload = Array.isArray(data) ? data : [data];
+
+  if (payload.length === 0) {
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify([]) }],
+    };
+  }
 
   return {
     content: payload.map((item) => ({
@@ -88,7 +98,7 @@ export function success<T>(data: T | T[]): CallToolResult {
  * @returns a formatted error response object for MCP tools.
  */
 export function error(err: unknown): CallToolResult {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errToString(err);
 
   return {
     content: [{ type: "text" as const, text: message }],

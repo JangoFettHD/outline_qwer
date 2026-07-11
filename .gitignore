@@ -20,6 +20,7 @@ tmp/
 *.pem
 *.key
 *.cert
+.history
 
 # Yarn Berry
 .yarn/*

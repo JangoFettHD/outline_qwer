@@ -51,6 +51,7 @@ import { DocumentValidation } from "@shared/validations";
 import { InvalidRequestError, ValidationError } from "@server/errors";
 import { generateUrlId } from "@server/utils/url";
 import Collection from "./Collection";
+import Comment from "./Comment";
 import FileOperation from "./FileOperation";
 import Group from "./Group";
 import GroupMembership from "./GroupMembership";
@@ -64,6 +65,7 @@ import User from "./User";
 import UserMembership from "./UserMembership";
 import View from "./View";
 import ArchivableModel from "./base/ArchivableModel";
+import { CounterCache } from "./decorators/CounterCache";
 import Fix from "./decorators/Fix";
 import { DocumentHelper } from "./helpers/DocumentHelper";
 import IsHexColor from "./validators/IsHexColor";
@@ -277,40 +279,40 @@ class Document extends ArchivableModel<
     msg: `urlId must be 10 characters`,
   })
   @Unique
-  @Column
+  @Column(DataType.STRING)
   urlId: string;
 
   @Length({
     max: DocumentValidation.maxTitleLength,
     msg: `Document title must be ${DocumentValidation.maxTitleLength} characters or less`,
   })
-  @Column
+  @Column(DataType.STRING)
   title: string;
 
   @Length({
     max: DocumentValidation.maxSummaryLength,
     msg: `Document summary must be ${DocumentValidation.maxSummaryLength} characters or less`,
   })
-  @Column
+  @Column(DataType.STRING)
   @SkipChangeset
   summary: string;
 
   @Column(DataType.ARRAY(DataType.STRING))
-  previousTitles: string[] = [];
+  previousTitles: string[];
 
   @IsNumeric
   @Column(DataType.SMALLINT)
   version?: number | null;
 
   @Default(false)
-  @Column
+  @Column(DataType.BOOLEAN)
   fullWidth: boolean;
 
   @Default(false)
-  @Column
+  @Column(DataType.BOOLEAN)
   template: boolean;
 
-  @Column
+  @Column(DataType.BOOLEAN)
   insightsEnabled: boolean;
 
   /** The version of the editor last used to edit this document. */
@@ -318,16 +320,16 @@ class Document extends ArchivableModel<
     max: 255,
     msg: `editorVersion must be 255 characters or less`,
   })
-  @Column
+  @Column(DataType.STRING)
   editorVersion: string | null;
 
   /** An icon to use as the document icon. */
-  @Column
+  @Column(DataType.STRING)
   icon: string | null;
 
   /** The color of the icon. */
   @IsHexColor
-  @Column
+  @Column(DataType.STRING)
   color: string | null;
 
   /**
@@ -366,7 +368,7 @@ class Document extends ArchivableModel<
 
   /** Whether this document is part of onboarding. */
   @Default(false)
-  @Column
+  @Column(DataType.BOOLEAN)
   isWelcome: boolean;
 
   /** How many versions there are in the history of this document. */
@@ -384,12 +386,12 @@ class Document extends ArchivableModel<
 
   /** Whether the document is published, and if so when. */
   @IsDate
-  @Column
+  @Column(DataType.DATE)
   publishedAt: Date | null;
 
   /** An array of user IDs that have edited this document. */
   @Column(DataType.ARRAY(DataType.UUID))
-  collaboratorIds: string[] = [];
+  collaboratorIds: string[];
 
   // getters
 
@@ -677,6 +679,13 @@ class Document extends ArchivableModel<
 
   @HasMany(() => View)
   views: View[];
+
+  @CounterCache(() => Comment, {
+    as: "unresolvedComments",
+    foreignKey: "documentId",
+    where: { resolvedAt: { [Op.is]: null } },
+  })
+  commentCount: Promise<number>;
 
   /**
    * Returns an array of unique userIds that are members of a document
@@ -978,16 +987,17 @@ class Document extends ArchivableModel<
     const findAllChildDocumentIds = async (
       ...parentDocumentId: string[]
     ): Promise<string[]> => {
-      const childDocuments = await (
-        this.constructor as typeof Document
-      ).findAll({
-        attributes: ["id"],
-        where: {
-          parentDocumentId,
-          ...where,
-        },
-        ...options,
-      });
+      // Unscoped as this method only ever reads the id column
+      const childDocuments = await (this.constructor as typeof Document)
+        .unscoped()
+        .findAll({
+          attributes: ["id"],
+          where: {
+            parentDocumentId,
+            ...where,
+          },
+          ...options,
+        });
 
       const childDocumentIds = childDocuments.map((doc) => doc.id);
 

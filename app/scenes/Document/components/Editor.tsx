@@ -6,7 +6,6 @@ import { useRouteMatch } from "react-router-dom";
 import styled from "styled-components";
 import Text from "@shared/components/Text";
 import { richExtensions, withComments } from "@shared/editor/nodes";
-import { TeamPreference } from "@shared/types";
 import { colorPalette } from "@shared/utils/collections";
 import Comment from "~/models/Comment";
 import type Document from "~/models/Document";
@@ -38,8 +37,12 @@ import DocumentTitle from "./DocumentTitle";
 import { first } from "es-toolkit/compat";
 import { getLangFor } from "~/utils/language";
 import useShare from "@shared/hooks/useShare";
+import CodeWordBreak from "@shared/editor/extensions/CodeWordBreak";
 
-const extensions = withUIExtensions(withComments(richExtensions));
+const extensions = [
+  CodeWordBreak,
+  ...withUIExtensions(withComments(richExtensions)),
+];
 
 type Props = Omit<EditorProps, "editorStyle"> & {
   onChangeTitle: (title: string) => void;
@@ -84,7 +87,7 @@ function DocumentEditor(props: Props, ref: React.ForwardedRef<SharedEditor>) {
     ...rest
   } = props;
   const can = usePolicy(document);
-  const commentingEnabled = !!team?.getPreference(TeamPreference.Commenting);
+  const commentingEnabled = !!team?.commentingEnabled;
 
   const iconColor = document.color ?? (first(colorPalette) as string);
   const childRef = React.useRef<HTMLDivElement>(null);

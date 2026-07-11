@@ -3,8 +3,6 @@ import { InputRule } from "prosemirror-inputrules";
 import type { NodeSpec, Node as ProsemirrorNode } from "prosemirror-model";
 import { TextSelection } from "prosemirror-state";
 import {
-  addColumnAfter,
-  addRowAfter,
   columnResizing,
   deleteColumn,
   deleteRow,
@@ -17,9 +15,12 @@ import {
 } from "prosemirror-tables";
 import {
   addRowBefore,
+  addRowAfter,
   addColumnBefore,
+  addColumnAfter,
   addRowAndMoveSelection,
   setColumnAttr,
+  setRowAttr,
   createTable,
   exportTable,
   distributeColumns,
@@ -89,13 +90,14 @@ export default class Table extends Node {
     return {
       createTable,
       setColumnAttr,
+      setRowAttr,
       setTableAttr,
       sortTable,
       addColumnBefore,
-      addColumnAfter: () => addColumnAfter,
+      addColumnAfter,
       deleteColumn: () => deleteColumn,
       addRowBefore,
-      addRowAfter: () => addRowAfter,
+      addRowAfter,
       moveTableRow,
       moveTableColumn,
       deleteRow: () => deleteRow,
