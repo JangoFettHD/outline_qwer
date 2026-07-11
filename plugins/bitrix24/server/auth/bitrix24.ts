@@ -5,7 +5,6 @@ import { Strategy } from "passport-oauth2";
 import { slugifyDomain } from "@shared/utils/domains";
 import accountProvisioner from "@server/commands/accountProvisioner";
 import { createContext } from "@server/context";
-import { InvalidRequestError } from "@server/errors";
 import passportMiddleware from "@server/middlewares/passport";
 import type { User } from "@server/models";
 import type { AuthenticationResult } from "@server/types";
@@ -19,6 +18,11 @@ import {
 } from "@server/utils/passport";
 import config from "../../plugin.json";
 import env from "../env";
+import {
+  Bitrix24AccountInactiveError,
+  Bitrix24EmailMissingError,
+  Bitrix24ProfileFetchError,
+} from "../errors";
 
 const router = new Router();
 
@@ -55,18 +59,25 @@ async function fetchCurrentUser(
   const endpoint = `${portalUrl}/rest/user.current?auth=${encodeURIComponent(
     accessToken
   )}`;
-  const response = await fetch(endpoint, { method: "GET" });
-  const text = await response.text();
+  let text: string;
+  try {
+    const response = await fetch(endpoint, { method: "GET" });
+    text = await response.text();
+  } catch (err) {
+    throw Bitrix24ProfileFetchError(
+      `Bitrix24 user.current request failed: ${(err as Error).message}`
+    );
+  }
   let json: Bitrix24UserResponse;
   try {
     json = JSON.parse(text) as Bitrix24UserResponse;
   } catch (_err) {
-    throw InvalidRequestError(
+    throw Bitrix24ProfileFetchError(
       `Bitrix24 user.current returned non-JSON response: ${text.slice(0, 200)}`
     );
   }
   if (json.error || !json.result) {
-    throw InvalidRequestError(
+    throw Bitrix24ProfileFetchError(
       `Bitrix24 user.current error: ${
         json.error_description || json.error || "no result"
       }`
@@ -123,10 +134,16 @@ if (
 
           const profile = await fetchCurrentUser(portalUrl, accessToken);
 
+          if (profile.ACTIVE === false) {
+            throw Bitrix24AccountInactiveError(
+              `Bitrix24 user ${profile.ID} is deactivated on the portal`
+            );
+          }
+
           const email = profile.EMAIL?.toLowerCase();
           if (!email) {
-            throw InvalidRequestError(
-              "Email is missing on the Bitrix24 profile. Fill it in your Bitrix24 user profile and try again."
+            throw Bitrix24EmailMissingError(
+              `Bitrix24 user ${profile.ID} has no email on their profile`
             );
           }
 

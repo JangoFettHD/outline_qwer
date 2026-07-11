@@ -121,6 +121,29 @@ function Message({ notice }: { notice: string }) {
           Please request an invite from your workspace admin and try again.
         </Trans>
       );
+    case "bitrix24-email-missing":
+      return (
+        <Trans>
+          Sign-in failed because your Bitrix24 profile has no email address.
+          <hr />
+          Add an email to your profile in Bitrix24 (or ask a portal
+          administrator to do it), then try signing in again.
+        </Trans>
+      );
+    case "bitrix24-profile-error":
+      return (
+        <Trans>
+          We could not load your profile from Bitrix24. The portal may be
+          temporarily unavailable — please try again in a minute.
+        </Trans>
+      );
+    case "bitrix24-account-inactive":
+      return (
+        <Trans>
+          Your Bitrix24 account is deactivated, so it cannot be used to sign
+          in. Please contact your portal administrator.
+        </Trans>
+      );
     default:
       return <Trans>Sorry, an unknown error occurred.</Trans>;
   }
