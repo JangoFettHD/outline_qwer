@@ -76,6 +76,14 @@ notify_failure() {
 }
 trap 'notify_failure $LINENO' ERR
 
+# Presigned-ссылка на объект в S3 (живёт 7 дней). Пустая строка при ошибке.
+s3_link() {
+  local file="$1"
+  [[ -z "${S3_BUCKET}" || ! -f "${file}" ]] && return 0
+  rclone link "${S3_REMOTE}:${S3_BUCKET}/${S3_PREFIX}/${S3_CLASS:-daily}/$(basename "${file}")" \
+    --expire 168h 2>/dev/null || true
+}
+
 send_report() {
   if [[ -z "${BACKUP_EMAIL_TO:-}" ]]; then
     log "email: BACKUP_EMAIL_TO не задан — пропускаю отчёт"
@@ -83,12 +91,21 @@ send_report() {
   fi
   local subject body attach=()
   if [[ "${STATUS}" == "OK" ]]; then
+    local db_link uploads_link config_link
+    db_link="$(s3_link "${DB_FILE}")"
+    uploads_link="$(s3_link "${UPLOADS_FILE}")"
+    config_link="$(s3_link "${CONFIG_FILE}")"
     subject="✅ Outline backup OK — ${TS}"
     body="Бекап wiki.qwer.agency выполнен и проверен.
 
 База данных:  $(basename "${DB_FILE}") ($(du -h "${DB_FILE}" 2>/dev/null | cut -f1))
+${db_link:+  скачать (7 дней): ${db_link}}
+
 Аплоады:      $(basename "${UPLOADS_FILE}" 2>/dev/null) ($(du -h "${UPLOADS_FILE}" 2>/dev/null | cut -f1))
-Конфиги:      $(basename "${CONFIG_FILE}" 2>/dev/null) — только в S3 (содержит секреты)
+${uploads_link:+  скачать (7 дней): ${uploads_link}}
+
+Конфиги:      $(basename "${CONFIG_FILE}" 2>/dev/null) — содержит секреты, только по ссылке
+${config_link:+  скачать (7 дней): ${config_link}}
 
 Валидация:    дамп восстановлен во временную БД, таблиц: ${VERIFY_TABLES:-?}
 S3:           ${S3_BUCKET:+s3://${S3_BUCKET}/${S3_PREFIX}/${S3_CLASS:-daily}/}${S3_BUCKET:-не настроен}
