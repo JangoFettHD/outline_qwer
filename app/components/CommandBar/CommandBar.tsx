@@ -6,6 +6,7 @@ import { Portal } from "react-portal";
 import styled from "styled-components";
 import breakpoint from "styled-components-breakpoint";
 import { depths, s } from "@shared/styles";
+import Bitrix24SearchActions from "~/components/Bitrix24SearchActions";
 import SearchActions from "~/components/SearchActions";
 import rootActions from "~/actions/root";
 import useCommandBarActions from "~/hooks/useCommandBarActions";
@@ -37,6 +38,7 @@ function CommandBar() {
         <Positioner>
           <Animator>
             <SearchActions />
+            <Bitrix24SearchActions />
             <SearchInput
               defaultPlaceholder={`${t("Type a command or search")}…`}
             />

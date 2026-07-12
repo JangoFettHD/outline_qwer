@@ -70,3 +70,5 @@ export const RecentSearchesSection = ({ t }: ActionContext) =>
 RecentSearchesSection.priority = -0.1;
 
 export const TrashSection = ({ t }: ActionContext) => t("Trash");
+
+export const Bitrix24Section = ({ t }: ActionContext) => t("Bitrix24");

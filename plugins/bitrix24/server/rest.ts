@@ -431,6 +431,71 @@ export async function fetchUsersByIds(
   return map;
 }
 
+/**
+ * Resolve a Outline user's Bitrix24 user ID (the `providerId` stored on their
+ * UserAuthentication row at sign-in). Returns `null` when the user has never
+ * linked Bitrix24.
+ *
+ * @param user Outline user.
+ * @returns the Bitrix24 numeric user id as a string, or null.
+ */
+export async function getBitrix24UserId(user: User): Promise<string | null> {
+  const auth = await loadAuth(user);
+  return auth?.providerId ?? null;
+}
+
+/**
+ * Call a Bitrix24 REST method through the configured *incoming webhook*
+ * (a service credential), independent of any user's OAuth token. Used for
+ * server-initiated actions like delivering mention notifications. Returns the
+ * unwrapped `result`, or `null` when the webhook is not configured or the call
+ * fails (callers degrade quietly).
+ *
+ * @param method Bitrix24 REST method, e.g. `im.notify.system.add`.
+ * @param params request params.
+ * @returns the unwrapped `result`, or `null`.
+ */
+export async function callWebhook<T>(
+  method: string,
+  params: Record<string, string | number | Array<string | number>> = {}
+): Promise<T | null> {
+  const base = env.BITRIX24_WEBHOOK_URL?.replace(/\/$/, "");
+  if (!base) {
+    return null;
+  }
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) {
+      const key = k.endsWith("[]") ? k : `${k}[]`;
+      for (const item of v) {
+        body.append(key, String(item));
+      }
+    } else {
+      body.set(k, String(v));
+    }
+  }
+  try {
+    const res = await fetch(`${base}/${method}.json`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+    const json = JSON.parse(await res.text()) as RestSuccess<T> &
+      RestErrorResponse;
+    if (json.error) {
+      Logger.warn(`Bitrix24 webhook ${method} error: ${json.error}`);
+      return null;
+    }
+    return json.result;
+  } catch (err) {
+    Logger.warn(
+      `Bitrix24 webhook ${method} failed: ${(err as Error).message}`
+    );
+    return null;
+  }
+}
+
 export interface Bitrix24UserSummary {
   ID: string | number;
   NAME?: string;

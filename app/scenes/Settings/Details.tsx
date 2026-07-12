@@ -74,6 +74,10 @@ function Details() {
   const [showBitrix24Button, setShowBitrix24Button] = useState(
     team.getPreference(TeamPreference.ShowBitrix24Button) ?? false
   );
+  const [bitrix24MentionNotifications, setBitrix24MentionNotifications] =
+    useState(
+      team.getPreference(TeamPreference.Bitrix24MentionNotifications) ?? true
+    );
 
   const tocPositionOptions: Option[] = React.useMemo(
     () =>
@@ -188,6 +192,19 @@ function Details() {
     async (checked: boolean) => {
       setShowBitrix24Button(checked);
       team.setPreference(TeamPreference.ShowBitrix24Button, checked);
+      await team.save();
+      toast.success(t("Settings saved"));
+    },
+    [team, t]
+  );
+
+  const handleBitrix24MentionNotificationsChange = React.useCallback(
+    async (checked: boolean) => {
+      setBitrix24MentionNotifications(checked);
+      team.setPreference(
+        TeamPreference.Bitrix24MentionNotifications,
+        checked
+      );
       await team.save();
       toast.success(t("Settings saved"));
     },
@@ -408,6 +425,20 @@ function Details() {
               name={TeamPreference.ShowBitrix24Button}
               checked={showBitrix24Button}
               onChange={handleShowBitrix24ButtonChange}
+            />
+          </SettingRow>
+          <SettingRow
+            name={TeamPreference.Bitrix24MentionNotifications}
+            label={t("Bitrix24 mention notifications")}
+            description={t(
+              "Send a message to Bitrix24 messenger when a member is mentioned in a document or comment."
+            )}
+          >
+            <Switch
+              id={TeamPreference.Bitrix24MentionNotifications}
+              name={TeamPreference.Bitrix24MentionNotifications}
+              checked={bitrix24MentionNotifications}
+              onChange={handleBitrix24MentionNotificationsChange}
             />
           </SettingRow>
           <SettingRow

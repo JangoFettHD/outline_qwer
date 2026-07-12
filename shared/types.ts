@@ -453,6 +453,8 @@ export enum TeamPreference {
   Bitrix24PortalUrl = "bitrix24PortalUrl",
   /** Whether to show the Bitrix24 button in the sidebar. */
   ShowBitrix24Button = "showBitrix24Button",
+  /** Whether to deliver @mention notifications into Bitrix24 messenger. */
+  Bitrix24MentionNotifications = "bitrix24MentionNotifications",
 }
 
 export type TeamPreferences = {
@@ -472,6 +474,7 @@ export type TeamPreferences = {
   [TeamPreference.DisabledEmbeds]?: string[];
   [TeamPreference.Bitrix24PortalUrl]?: string | null;
   [TeamPreference.ShowBitrix24Button]?: boolean;
+  [TeamPreference.Bitrix24MentionNotifications]?: boolean;
 };
 
 export enum NavigationNodeType {

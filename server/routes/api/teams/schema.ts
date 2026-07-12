@@ -85,6 +85,8 @@ export const TeamsUpdateSchema = BaseSchema.extend({
           .nullish(),
         /** Whether to show the Bitrix24 button in the sidebar. */
         showBitrix24Button: z.boolean().optional(),
+        /** Deliver @mention notifications into Bitrix24 messenger. */
+        bitrix24MentionNotifications: z.boolean().optional(),
       })
       .optional(),
   }),

@@ -35,6 +35,35 @@ class Bitrix24PluginEnvironment extends Environment {
   public BITRIX24_PORTAL_URL = this.toOptionalString(
     environment.BITRIX24_PORTAL_URL
   );
+
+  /**
+   * Bitrix24 *incoming* webhook base URL, e.g.
+   * `https://qwer.bitrix24.ru/rest/1/xxxxxxxxxxxx/`. This is a service
+   * credential bound to a portal user that lets Outline call Bitrix24 REST
+   * server-to-server without a per-user OAuth token — used to deliver
+   * mention notifications into Bitrix24 messenger. Optional; when unset the
+   * notification bridge is disabled.
+   */
+  @IsOptional()
+  @IsUrl({
+    require_tld: true,
+    require_protocol: true,
+    protocols: ["http", "https"],
+  })
+  public BITRIX24_WEBHOOK_URL = this.toOptionalString(
+    environment.BITRIX24_WEBHOOK_URL
+  );
+
+  /**
+   * Shared secret (`application_token`) of the Bitrix24 *outbound* event
+   * handler that POSTs entity-change events to `/api/bitrix24.webhooks`.
+   * Used to authenticate those inbound requests so we can invalidate stale
+   * unfurl cards. Optional; when unset the inbound webhook is rejected.
+   */
+  @IsOptional()
+  public BITRIX24_WEBHOOK_TOKEN = this.toOptionalString(
+    environment.BITRIX24_WEBHOOK_TOKEN
+  );
 }
 
 export default new Bitrix24PluginEnvironment();

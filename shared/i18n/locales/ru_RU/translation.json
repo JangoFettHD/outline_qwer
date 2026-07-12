@@ -1779,5 +1779,7 @@
   "The URL of your Bitrix24 portal.": "URL-адрес вашего портала Битрикс24.",
   "Sign-in failed because your Bitrix24 profile has no email address.<1></1>Add an email to your profile in Bitrix24 (or ask a portal administrator to do it), then try signing in again.": "Не удалось войти: в вашем профиле Битрикс24 не указан email.<1></1>Добавьте email в профиль Битрикс24 (или попросите администратора портала), затем попробуйте войти снова.",
   "We could not load your profile from Bitrix24. The portal may be temporarily unavailable — please try again in a minute.": "Не удалось загрузить ваш профиль из Битрикс24. Возможно, портал временно недоступен — попробуйте через минуту.",
-  "Your Bitrix24 account is deactivated, so it cannot be used to sign in. Please contact your portal administrator.": "Ваша учётная запись Битрикс24 деактивирована, вход невозможен. Обратитесь к администратору портала."
+  "Your Bitrix24 account is deactivated, so it cannot be used to sign in. Please contact your portal administrator.": "Ваша учётная запись Битрикс24 деактивирована, вход невозможен. Обратитесь к администратору портала.",
+  "Bitrix24 mention notifications": "Уведомления об упоминаниях в Битрикс24",
+  "Send a message to Bitrix24 messenger when a member is mentioned in a document or comment.": "Отправлять сообщение в мессенджер Битрикс24, когда участника упоминают в документе или комментарии."
 }
