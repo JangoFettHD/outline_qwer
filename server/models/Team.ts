@@ -28,7 +28,11 @@ import { isEmail } from "validator";
 import { TeamPreferenceDefaults } from "@shared/constants";
 import type { TeamPreferences } from "@shared/types";
 import { TeamPreference, UserRole } from "@shared/types";
-import { getBaseDomain, RESERVED_SUBDOMAINS } from "@shared/utils/domains";
+import {
+  getBaseDomain,
+  parseDomain,
+  RESERVED_SUBDOMAINS,
+} from "@shared/utils/domains";
 import { attachmentRedirectRegex } from "@shared/utils/ProsemirrorHelper";
 import { parseEmail } from "@shared/utils/email";
 import { TeamValidation } from "@shared/validations";
@@ -44,7 +48,6 @@ import Share from "./Share";
 import TeamDomain from "./TeamDomain";
 import User from "./User";
 import ParanoidModel from "./base/ParanoidModel";
-import Fix from "./decorators/Fix";
 import IsFQDN from "./validators/IsFQDN";
 import IsUrlOrRelativePath from "./validators/IsUrlOrRelativePath";
 import Length from "./validators/Length";
@@ -74,7 +77,6 @@ const avatarRedirectPattern = new RegExp(attachmentRedirectRegex.source, "i");
   },
 }))
 @Table({ tableName: "teams", modelName: "team" })
-@Fix
 class Team extends ParanoidModel<
   InferAttributes<Team>,
   Partial<InferCreationAttributes<Team>>
@@ -285,6 +287,20 @@ class Team extends ParanoidModel<
 
     url.host = `${this.subdomain}.${getBaseDomain()}`;
     return url.href.replace(/\/$/, "");
+  }
+
+  /**
+   * Returns whether the given url points at this team's installation, taking
+   * into account custom domains and hosted subdomains.
+   *
+   * @param url The url to check.
+   * @returns True if the url belongs to this team.
+   */
+  public isTeamUrl(url: string): boolean {
+    if (!url) {
+      return false;
+    }
+    return parseDomain(url).host === parseDomain(this.url).host;
   }
 
   /**

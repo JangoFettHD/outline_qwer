@@ -466,7 +466,6 @@ async function unfurlChat(
     description: cleanBitrixText(dialog.description) ?? "",
     thumbnailUrl: dialog.avatar ?? "",
     faviconUrl: faviconForPortal(),
-    transformedUnfurl: true,
   };
 }
 
@@ -629,7 +628,6 @@ async function unfurlCompany(
     description: descBits.join(" · ") || cleanBitrixText(co.COMMENTS) || "",
     thumbnailUrl: "",
     faviconUrl: faviconForPortal(),
-    transformedUnfurl: true,
   };
 }
 

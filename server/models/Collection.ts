@@ -50,7 +50,7 @@ import type {
   SourceMetadata,
   NavigationNode,
 } from "@shared/types";
-import { CollectionPermission } from "@shared/types";
+import { CollectionPermission, NavigationNodeType } from "@shared/types";
 import { UrlHelper } from "@shared/utils/UrlHelper";
 import { sortNavigationNodes } from "@shared/utils/collections";
 import slugify from "@shared/utils/slugify";
@@ -73,7 +73,6 @@ import Team from "./Team";
 import User from "./User";
 import UserMembership from "./UserMembership";
 import ParanoidModel from "./base/ParanoidModel";
-import Fix from "./decorators/Fix";
 import { DocumentHelper } from "./helpers/DocumentHelper";
 import IsHexColor from "./validators/IsHexColor";
 import Length from "./validators/Length";
@@ -198,7 +197,6 @@ type AdditionalFindOptions = {
   },
 }))
 @Table({ tableName: "collections", modelName: "collection" })
-@Fix
 class Collection extends ParanoidModel<
   InferAttributes<Collection>,
   Partial<InferCreationAttributes<Collection>>
@@ -684,15 +682,17 @@ class Collection extends ParanoidModel<
 
     if (isUUID(id)) {
       const collection = await scope.findOne({
+        ...rest,
         where: {
           id,
         },
-        ...rest,
         rejectOnEmpty: false,
       });
 
       if (!collection && rest.rejectOnEmpty) {
-        throw new EmptyResultError(`Collection doesn't exist with id: ${id}`);
+        throw rest.rejectOnEmpty instanceof Error
+          ? rest.rejectOnEmpty
+          : new EmptyResultError(`Collection doesn't exist with id: ${id}`);
       }
 
       return collection;
@@ -701,15 +701,17 @@ class Collection extends ParanoidModel<
     const match = id.match(UrlHelper.SLUG_URL_REGEX);
     if (match) {
       const collection = await scope.findOne({
+        ...rest,
         where: {
           urlId: match[1],
         },
-        ...rest,
         rejectOnEmpty: false,
       });
 
       if (!collection && rest.rejectOnEmpty) {
-        throw new EmptyResultError(`Collection doesn't exist with id: ${id}`);
+        throw rest.rejectOnEmpty instanceof Error
+          ? rest.rejectOnEmpty
+          : new EmptyResultError(`Collection doesn't exist with id: ${id}`);
       }
 
       return collection;
@@ -1119,6 +1121,7 @@ class Collection extends ParanoidModel<
     id: this.id,
     title: this.name,
     url: this.path,
+    type: NavigationNodeType.Collection,
     icon: isNil(this.icon) ? undefined : this.icon,
     color: isNil(this.color) ? undefined : this.color,
     children: sortNavigationNodes(this.documentStructure ?? [], this.sort),

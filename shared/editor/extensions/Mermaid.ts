@@ -7,7 +7,6 @@ import type { Node } from "prosemirror-model";
 import type { Transaction } from "prosemirror-state";
 import { NodeSelection, Plugin, PluginKey } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
-import { toast } from "sonner";
 import { errToString } from "../../utils/error";
 import { isCode, isMermaid } from "../lib/isCode";
 import { isRemoteTransaction, mapDecorations } from "../lib/multiplayer";
@@ -323,6 +322,7 @@ function getNewState({
   autoEditEmpty?: boolean;
 }): MermaidState {
   const decorations: Decoration[] = [];
+  const usedRenderers = new Set<MermaidRenderer>();
   let newEditingId: string | undefined;
 
   // Find all blocks that represent Mermaid diagrams (supports both "mermaid" and "mermaidjs"),
@@ -332,11 +332,25 @@ function getNewState({
   );
 
   blocks.forEach((block) => {
-    const existingDecorations = pluginState.decorationSet.find(
-      block.pos,
-      block.pos + block.node.nodeSize,
-      (spec) => !!spec.diagramId
-    );
+    const existingDecorations = pluginState.decorationSet
+      .find(
+        block.pos,
+        block.pos + block.node.nodeSize,
+        (spec) => !!spec.diagramId
+      )
+      // A widget sitting exactly at the start of this block belongs to the
+      // preceding diagram, whose end position is shared with this one.
+      .filter((decoration) => {
+        if (
+          decoration.from === decoration.to &&
+          decoration.from === block.pos
+        ) {
+          return false;
+        }
+        // Each renderer owns a single DOM element, so it can only back one
+        // diagram — reusing it would place the same node in two places.
+        return !usedRenderers.has(decoration.spec.renderer);
+      });
 
     const bestDecoration = findBestOverlapDecoration(
       existingDecorations,
@@ -346,6 +360,7 @@ function getNewState({
     const isNewBlock = !bestDecoration;
     const renderer: MermaidRenderer =
       bestDecoration?.spec?.renderer ?? new MermaidRenderer(editor);
+    usedRenderers.add(renderer);
 
     // Auto-enter edit mode for newly created empty mermaid diagrams
     if (
@@ -356,16 +371,16 @@ function getNewState({
       newEditingId = renderer.diagramId;
     }
 
+    void renderer.render(block, pluginState.isDark);
+
     const diagramDecoration = Decoration.widget(
       block.pos + block.node.nodeSize,
-      () => {
-        void renderer.render(block, pluginState.isDark);
-        return renderer.element;
-      },
+      () => renderer.element,
       {
         diagramId: renderer.diagramId,
         renderer,
         side: -10,
+        key: `mermaid-${renderer.diagramId}`,
       }
     );
 
@@ -397,7 +412,7 @@ export default function Mermaid({
   isDark: boolean;
   editor: Editor;
 }) {
-  const { onClickLink } = editor.props;
+  const { onClickLink, onNotice } = editor.props;
 
   return new Plugin({
     key: pluginKey,
@@ -530,7 +545,11 @@ export default function Mermaid({
         return this.getState(state)?.decorationSet;
       },
       handleKeyDown(view, event) {
-        if (event.key === "Enter" && isModKey(event) && !editor.props.readOnly) {
+        if (
+          event.key === "Enter" &&
+          isModKey(event) &&
+          !editor.props.readOnly
+        ) {
           const { selection } = view.state;
           const isNodeSel = selection instanceof NodeSelection;
           const isMermaidNode =
@@ -591,8 +610,12 @@ export default function Mermaid({
           event.preventDefault();
 
           if (isSelected || editor.props.readOnly) {
-            // Already selected or read-only, open lightbox
-            if (node && node.textContent.trim().length > 0) {
+            // Already selected or read-only, open lightbox unless the diagram
+            // failed to render (no valid image to show)
+            const hasError =
+              diagram.classList.contains("parse-error") ||
+              diagram.classList.contains("empty");
+            if (!hasError && node && node.textContent.trim().length > 0) {
               editor.updateActiveLightboxImage(
                 LightboxImageFactory.createLightboxImage(view, nodePos)
               );
@@ -625,7 +648,10 @@ export default function Mermaid({
                 onClickLink(sanitizeUrl(href) ?? "");
               }
             } catch (_err) {
-              toast.error(t("Sorry, that type of link is not supported"));
+              onNotice?.(
+                t("Sorry, that type of link is not supported"),
+                "error"
+              );
             }
           }
 

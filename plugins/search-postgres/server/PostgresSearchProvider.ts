@@ -21,6 +21,7 @@ import Team from "@server/models/Team";
 import User from "@server/models/User";
 import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
 import { sequelize } from "@server/storage/database";
+import { QueryHelper } from "@server/storage/QueryHelper";
 import type {
   SearchOptions,
   SearchResponse,
@@ -283,9 +284,7 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
 
     if (query) {
       where[Op.and].push({
-        title: {
-          [Op.iLike]: `%${query}%`,
-        },
+        title: { [Op.iLike]: QueryHelper.likeContains(query) },
       });
     }
 
@@ -370,7 +369,7 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
         teamId: user.teamId,
       },
       order: [["name", "ASC"]],
-      replacements: { query: `%${query}%` },
+      replacements: { query: QueryHelper.likeContains(query ?? "") },
       limit,
       offset,
     });
@@ -772,16 +771,18 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
       const iLikeQueries = [...quotedQueries, ...likelyUrls].slice(0, 3);
 
       for (const match of iLikeQueries) {
+        // only escape % and _ as backslashes were already escaped above.
+        const pattern = `%${match.replace(/[%_]/g, "\\$&")}%`;
         where[Op.and].push({
           [Op.or]: [
             {
               title: {
-                [Op.iLike]: `%${match}%`,
+                [Op.iLike]: pattern,
               },
             },
             {
               text: {
-                [Op.iLike]: `%${match}%`,
+                [Op.iLike]: pattern,
               },
             },
           ],
@@ -839,9 +840,7 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
    */
   public static webSearchQuery(query: string): string {
     // limit length of search queries as we're using regex against untrusted input
-    let limitedQuery = PostgresSearchProvider.escapeQuery(
-      query.slice(0, PostgresSearchProvider.maxQueryLength)
-    );
+    let limitedQuery = query.slice(0, PostgresSearchProvider.maxQueryLength);
 
     const quotedSearch =
       limitedQuery.startsWith('"') && limitedQuery.endsWith('"');
@@ -866,6 +865,9 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
       }
     }
 
+    // Escape only once the phrase delimiters above have settled.
+    limitedQuery = PostgresSearchProvider.escapeTsQuery(limitedQuery);
+
     return (
       queryParser()(
         // Although queryParser trims the query, looks like there's a
@@ -881,14 +883,26 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
   }
 
   private static escapeQuery(query: string): string {
-    return (
-      query
-        // replace "\" with escaped "\\" because sequelize.escape doesn't do it
-        // see: https://github.com/sequelize/sequelize/issues/2950
-        .replace(/\\/g, "\\\\")
-        // replace ":" with escaped "\:" because it's a reserved character in tsquery
-        // see: https://github.com/outline/outline/issues/6542
-        .replace(/:/g, "\\:")
+    // replace "\" with escaped "\\" because sequelize.escape doesn't do it
+    // see: https://github.com/sequelize/sequelize/issues/2950
+    return query.replace(/\\/g, "\\\\");
+  }
+
+  /**
+   * Escapes the characters that are reserved in tsquery, segment by segment so
+   * that quoted phrases can be treated differently to the rest of the query.
+   *
+   * ":" only needs escaping inside a phrase, where pg-tsquery passes it through
+   * verbatim (see: https://github.com/outline/outline/issues/6542). Elsewhere
+   * pg-tsquery drops the colon but keeps a preceding backslash, which would
+   * leave to_tsquery with a dangling escape character.
+   */
+  private static escapeTsQuery(query: string): string {
+    return query.replace(/"[^"]*"|'[^']*'|[\s\S]/g, (segment) =>
+      // a match longer than the single character fallback is a quoted phrase
+      segment.length > 1
+        ? segment.replace(/[\\:]/g, "\\$&")
+        : segment.replace(/\\/g, "\\\\")
     );
   }
 

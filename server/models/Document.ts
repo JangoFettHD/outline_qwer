@@ -8,9 +8,16 @@ import type {
   SaveOptions,
   ScopeOptions,
   FindOptions,
+  ProjectionAlias,
   WhereOptions,
 } from "sequelize";
-import { Transaction, Op, EmptyResultError, Sequelize } from "sequelize";
+import {
+  Transaction,
+  Op,
+  EmptyResultError,
+  Sequelize,
+  QueryTypes,
+} from "sequelize";
 import {
   ForeignKey,
   BelongsTo,
@@ -66,7 +73,6 @@ import UserMembership from "./UserMembership";
 import View from "./View";
 import ArchivableModel from "./base/ArchivableModel";
 import { CounterCache } from "./decorators/CounterCache";
-import Fix from "./decorators/Fix";
 import { DocumentHelper } from "./helpers/DocumentHelper";
 import IsHexColor from "./validators/IsHexColor";
 import Length from "./validators/Length";
@@ -81,22 +87,39 @@ export const DOCUMENT_VERSION = 2;
 // If content (JSON) is null then we still need to return the state column (BINARY)
 // as it's used as a fallback for content deserialization for older documents.
 // This can be removed if content is 100% backfilled.
-const stateIfContentEmpty = Sequelize.literal(
-  `CASE WHEN document.content IS NULL THEN document.state ELSE NULL END AS state`
-);
+const stateIfContentEmpty: ProjectionAlias = [
+  Sequelize.literal(
+    `CASE WHEN document.content IS NULL THEN document.state ELSE NULL END`
+  ),
+  "state",
+];
 
 type AdditionalFindOptions = {
   /** The user ID to load associated permissions for. */
   userId?: string;
   /** Whether to include the state column in the attributes. */
   includeState?: boolean;
-  /** Whether to views (default: true). */
+  /**
+   * Whether to include the content columns in the attributes (default: true).
+   * Pass false when the document is only needed for authorization.
+   */
+  includeContent?: boolean;
+  /** Whether to include views (default: true). */
   includeViews?: boolean;
   /** Whether to reject the query if no document is found. */
   rejectOnEmpty?: boolean | Error;
 };
 
-// @ts-expect-error Type 'Literal' is not assignable to type 'string | ProjectionAlias'.
+/** Sequelize types the query generator as unknown; this narrows to the single
+ * method used to build a raw SQL filter fragment. */
+interface QueryGeneratorWithWhere {
+  getWhereConditions(
+    where: WhereOptions<Document>,
+    tableName: string,
+    factory: typeof Document
+  ): string;
+}
+
 @DefaultScope(() => ({
   include: [
     {
@@ -122,14 +145,20 @@ type AdditionalFindOptions = {
     template: false,
   },
   attributes: {
+    exclude: ["state"],
     include: [stateIfContentEmpty],
   },
 }))
-// @ts-expect-error Type 'Literal' is not assignable to type 'string | ProjectionAlias'.
 @Scopes(() => ({
   withoutState: {
     attributes: {
+      exclude: ["state"],
       include: [stateIfContentEmpty],
+    },
+  },
+  withoutContent: {
+    attributes: {
+      exclude: ["state", "content", "text"],
     },
   },
   withCollection: {
@@ -171,7 +200,6 @@ type AdditionalFindOptions = {
             userId,
           },
           required: false,
-          separate: true,
         },
       ],
     };
@@ -199,7 +227,6 @@ type AdditionalFindOptions = {
             userId,
           },
           required: false,
-          separate: true,
         },
         {
           association: "groupMemberships",
@@ -268,7 +295,6 @@ type AdditionalFindOptions = {
   },
 }))
 @Table({ tableName: "documents", modelName: "document" })
-@Fix
 class Document extends ArchivableModel<
   InferAttributes<Document>,
   Partial<InferCreationAttributes<Document>>
@@ -338,6 +364,10 @@ class Document extends ArchivableModel<
    * @deprecated Use `content` instead, or `DocumentHelper.toMarkdown` if exporting lossy markdown.
    * This column will be removed in a future migration.
    */
+  @SimpleLength({
+    max: DocumentValidation.maxLength,
+    msg: `Document text content must be ${DocumentValidation.maxLength} characters or less`,
+  })
   @Column(DataType.TEXT)
   @SkipChangeset
   text: string;
@@ -775,15 +805,21 @@ class Document extends ArchivableModel<
     const {
       includeViews = true,
       includeState = false,
+      includeContent = true,
       userId,
       ...rest
     } = options;
+
+    let contentScope = includeState ? "withState" : "withoutState";
+    if (!includeContent) {
+      contentScope = "withoutContent";
+    }
 
     // allow default preloading of collection membership if `userId` is passed in find options
     // almost every endpoint needs the collection membership to determine policy permissions.
     const scope = this.scope([
       "withDrafts",
-      includeState ? "withState" : "withoutState",
+      contentScope,
       ...((includeViews
         ? [
             {
@@ -798,15 +834,17 @@ class Document extends ArchivableModel<
 
     if (isUUID(id)) {
       const document = await scope.findOne({
+        ...rest,
         where: {
           id,
         },
-        ...rest,
         rejectOnEmpty: false,
       });
 
       if (!document && rest.rejectOnEmpty) {
-        throw new EmptyResultError(`Document doesn't exist with id: ${id}`);
+        throw rest.rejectOnEmpty instanceof Error
+          ? rest.rejectOnEmpty
+          : new EmptyResultError(`Document doesn't exist with id: ${id}`);
       }
 
       return document;
@@ -815,15 +853,17 @@ class Document extends ArchivableModel<
     const match = id.match(UrlHelper.SLUG_URL_REGEX);
     if (match) {
       const document = await scope.findOne({
+        ...rest,
         where: {
           urlId: match[1],
         },
-        ...rest,
         rejectOnEmpty: false,
       });
 
       if (!document && rest.rejectOnEmpty) {
-        throw new EmptyResultError(`Document doesn't exist with id: ${id}`);
+        throw rest.rejectOnEmpty instanceof Error
+          ? rest.rejectOnEmpty
+          : new EmptyResultError(`Document doesn't exist with id: ${id}`);
       }
 
       return document;
@@ -873,14 +913,23 @@ class Document extends ArchivableModel<
       return documents;
     }
 
-    return documents.filter(
-      (doc) =>
-        (!doc.collection?.isPrivate && !user?.isGuest) ||
-        (doc.collection?.memberships.length || 0) > 0 ||
-        (doc.collection?.groupMemberships.length || 0) > 0 ||
-        doc.memberships.length > 0 ||
-        doc.groupMemberships.length > 0
-    );
+    return documents.filter((doc) => {
+      if (doc.memberships.length > 0 || doc.groupMemberships.length > 0) {
+        return true;
+      }
+
+      // A document without a collection is either an unfiled draft or lives in
+      // a collection the user cannot see – access is limited to the creator.
+      if (!doc.collection) {
+        return doc.createdById === userId;
+      }
+
+      return (
+        (!doc.collection.isPrivate && !user?.isGuest) ||
+        doc.collection.memberships.length > 0 ||
+        doc.collection.groupMemberships.length > 0
+      );
+    });
   }
 
   // instance methods
@@ -984,34 +1033,46 @@ class Document extends ArchivableModel<
     where?: Omit<WhereOptions<Document>, "parentDocumentId">,
     options?: FindOptions<Document>
   ): Promise<string[]> => {
-    const findAllChildDocumentIds = async (
-      ...parentDocumentId: string[]
-    ): Promise<string[]> => {
-      // Unscoped as this method only ever reads the id column
-      const childDocuments = await (this.constructor as typeof Document)
-        .unscoped()
-        .findAll({
-          attributes: ["id"],
-          where: {
-            parentDocumentId,
-            ...where,
-          },
-          ...options,
-        });
+    const model = this.constructor as typeof Document;
+    const queryGenerator = this.sequelize!.getQueryInterface()
+      .queryGenerator as QueryGeneratorWithWhere;
 
-      const childDocumentIds = childDocuments.map((doc) => doc.id);
+    const paranoid = options?.paranoid ?? true;
+    const whereConditions = queryGenerator.getWhereConditions(
+      { ...(paranoid ? { deletedAt: null } : {}), ...where },
+      "documents",
+      model
+    );
+    const anchorFilter = whereConditions ? `AND (${whereConditions})` : "";
+    const recursiveFilter = whereConditions ? `WHERE (${whereConditions})` : "";
 
-      if (childDocumentIds.length > 0) {
-        return [
-          ...childDocumentIds,
-          ...(await findAllChildDocumentIds(...childDocumentIds)),
-        ];
+    // A single recursive CTE walks the entire subtree in one round-trip rather
+    // than issuing one query per level of nesting (N+1). Rows are ordered by
+    // depth to ensure breadth-first result ordering. UNION ALL is safe as the
+    // tree is acyclic, so each descendant id is reached exactly once.
+    const rows = await this.sequelize!.query<{ id: string }>(
+      `
+      WITH RECURSIVE children AS (
+        SELECT documents.id, 1 AS depth
+        FROM documents
+        WHERE documents."parentDocumentId" = :parentDocumentId
+          ${anchorFilter}
+        UNION ALL
+        SELECT documents.id, children.depth + 1
+        FROM documents
+        INNER JOIN children ON documents."parentDocumentId" = children.id
+        ${recursiveFilter}
+      )
+      SELECT id FROM children ORDER BY depth
+      `,
+      {
+        replacements: { parentDocumentId: this.id },
+        transaction: options?.transaction,
+        type: QueryTypes.SELECT,
       }
+    );
 
-      return childDocumentIds;
-    };
-
-    return findAllChildDocumentIds(this.id);
+    return rows.map((row) => row.id);
   };
 
   publish = async (
@@ -1054,7 +1115,7 @@ class Document extends ArchivableModel<
       const collection = await Collection.findByPk(this.collectionId, {
         includeDocumentStructure: true,
         transaction,
-        lock: Transaction.LOCK.UPDATE,
+        lock: Transaction.LOCK.NO_KEY_UPDATE,
       });
 
       if (collection) {

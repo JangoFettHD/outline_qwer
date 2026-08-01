@@ -63,8 +63,10 @@ import {
   GroupMembership,
   FileOperation,
 } from "@server/models";
+import { SearchQuerySource } from "@server/models/SearchQuery";
 import AttachmentHelper from "@server/models/helpers/AttachmentHelper";
 import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
+import HTMLHelper from "@server/models/helpers/HTMLHelper";
 import { ProsemirrorHelper } from "@server/models/helpers/ProsemirrorHelper";
 import SearchProviderManager from "@server/utils/SearchProviderManager";
 import { TextHelper } from "@server/models/helpers/TextHelper";
@@ -81,7 +83,6 @@ import {
   presentGroup,
   presentFileOperation,
 } from "@server/presenters";
-import type { DocumentImportTaskResponse } from "@server/queues/tasks/DocumentImportTask";
 import DocumentImportTask from "@server/queues/tasks/DocumentImportTask";
 import EmptyTrashTask from "@server/queues/tasks/EmptyTrashTask";
 import FileStorage from "@server/storage/files";
@@ -89,6 +90,7 @@ import type { APIContext } from "@server/types";
 import { RateLimiterStrategy } from "@server/utils/RateLimiter";
 import { convertBareUrlsToEmbedMarkdown } from "@server/utils/embeds";
 import { streamZipResponse } from "@server/utils/koa";
+import { QueryHelper } from "@server/storage/QueryHelper";
 import { getTeamFromContext } from "@server/utils/passport";
 import pagination, { paginateQuery } from "../middlewares/pagination";
 import * as T from "./schema";
@@ -750,7 +752,7 @@ router.post(
       };
     }
 
-    const replacements = { query: `%${query}%` };
+    const replacements = { query: QueryHelper.likeContains(query ?? "") };
 
     const { results: users, pagination } = await paginateQuery<User>(
       ctx,
@@ -908,7 +910,43 @@ router.post(
         })
       : [];
 
-    if (attachments.length === 0) {
+    // Read attachments and, when exporting HTML, inline small images that are
+    // referenced a single time as base64 data URIs. Any remaining attachments
+    // are bundled alongside the document in a zip.
+    const externalAttachments: { attachment: Attachment; buffer: Buffer }[] =
+      [];
+    for (const attachment of attachments) {
+      let buffer: Buffer;
+      try {
+        buffer = await attachment.buffer;
+      } catch (err) {
+        Logger.warn(`Failed to read attachment from storage`, {
+          attachmentId: attachment.id,
+          teamId: attachment.teamId,
+          error: errToString(err),
+        });
+        buffer = Buffer.from("");
+      }
+
+      if (contentType === "text/html") {
+        const inlined = HTMLHelper.inlineImage(
+          content,
+          attachment.redirectUrl,
+          attachment.contentType,
+          buffer
+        );
+        if (inlined !== null) {
+          content = inlined;
+          continue;
+        }
+      }
+
+      externalAttachments.push({ attachment, buffer });
+    }
+
+    // When there are no external attachments the document is self-contained and
+    // can be served directly rather than bundled in a zip.
+    if (externalAttachments.length === 0) {
       ctx.set("Content-Type", contentType);
       ctx.set(
         "Content-Disposition",
@@ -920,23 +958,12 @@ router.post(
       return;
     }
 
-    await streamZipResponse(ctx, `${fileName}.zip`, async (zip) => {
-      for (const attachment of attachments) {
+    streamZipResponse(ctx, `${fileName}.zip`, (zip) => {
+      for (const { attachment, buffer } of externalAttachments) {
         const location = path.join(
           "attachments",
           `${attachment.id}.${mime.extension(attachment.contentType)}`
         );
-        let buffer: Buffer;
-        try {
-          buffer = await attachment.buffer;
-        } catch (err) {
-          Logger.warn(`Failed to read attachment from storage`, {
-            attachmentId: attachment.id,
-            teamId: attachment.teamId,
-            error: errToString(err),
-          });
-          buffer = Buffer.from("");
-        }
         zip.addBuffer(buffer, location, { mtime: attachment.updatedAt });
 
         content = content.replace(
@@ -955,6 +982,7 @@ router.post(
 router.post(
   "documents.restore",
   auth({ role: UserRole.Member }),
+  rateLimiter(RateLimiterStrategy.OneHundredPerMinute),
   validate(T.DocumentsRestoreSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsRestoreReq>) => {
@@ -1173,11 +1201,14 @@ router.post(
     // duplicate search query records
     if (query && offset === 0) {
       const duration = Date.now() - searchStartedAt;
-      await SearchQuery.create({
+      await SearchQuery.record({
         userId: user?.id,
         teamId,
         shareId: share?.id,
-        source: ctx.state.auth.type || "app", // we'll consider anything that isn't "api" to be "app"
+        // auth.type values are a subset of search sources; unauthenticated share searches default to "app"
+        source:
+          (ctx.state.auth.type as unknown as SearchQuerySource) ||
+          SearchQuerySource.App,
         query,
         results: total,
         duration,
@@ -1296,6 +1327,7 @@ router.post(
 router.post(
   "documents.duplicate",
   auth(),
+  rateLimiter(RateLimiterStrategy.TwentyFivePerMinute),
   validate(T.DocumentsDuplicateSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsDuplicateReq>) => {
@@ -1308,18 +1340,9 @@ router.post(
       userId: user.id,
       transaction,
     });
-    authorize(user, "read", document);
+    authorize(user, "duplicate", document);
 
-    const collection = collectionId
-      ? await Collection.findByPk(collectionId, {
-          userId: user.id,
-          transaction,
-        })
-      : document?.collection;
-
-    if (collection) {
-      authorize(user, "updateDocument", collection);
-    }
+    let collection: Collection | null | undefined;
 
     if (parentDocumentId) {
       const parent = await Document.findByPk(parentDocumentId, {
@@ -1330,6 +1353,34 @@ router.post(
 
       if (!parent.publishedAt) {
         throw InvalidRequestError("Cannot duplicate document inside a draft");
+      }
+
+      if (collectionId && collectionId !== parent.collectionId) {
+        throw InvalidRequestError(
+          "collectionId must match the collection of the parent document"
+        );
+      }
+
+      // The copy is nested under the parent, so it belongs to the parent's
+      // collection.
+      collection = parent.collectionId
+        ? await Collection.findByPk(parent.collectionId, {
+            userId: user.id,
+            transaction,
+          })
+        : undefined;
+    } else {
+      collection = collectionId
+        ? await Collection.findByPk(collectionId, {
+            userId: user.id,
+            transaction,
+          })
+        : document?.collection;
+
+      // The copy is created in the destination collection, so create permission
+      // is required there rather than on the source.
+      if (collection) {
+        authorize(user, "createDocument", collection);
       }
     }
 
@@ -1354,6 +1405,7 @@ router.post(
 router.post(
   "documents.move",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerMinute),
   validate(T.DocumentsMoveSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsMoveReq>) => {
@@ -1409,6 +1461,7 @@ router.post(
 router.post(
   "documents.archive",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerMinute),
   validate(T.DocumentsArchiveSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsArchiveReq>) => {
@@ -1435,6 +1488,7 @@ router.post(
 router.post(
   "documents.delete",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerMinute),
   validate(T.DocumentsDeleteSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsDeleteReq>) => {
@@ -1479,6 +1533,7 @@ router.post(
 router.post(
   "documents.unpublish",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerMinute),
   validate(T.DocumentsUnpublishSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsUnpublishReq>) => {
@@ -1573,7 +1628,7 @@ router.post(
       });
     }
 
-    const job = await new DocumentImportTask().schedule({
+    const document = await DocumentImportTask.scheduleAndWait({
       key,
       sourceMetadata: {
         fileName,
@@ -1583,16 +1638,8 @@ router.post(
       collectionId: collectionId ?? parentDocument?.collectionId,
       parentDocumentId,
       publish,
+      authType: ctx.state.auth.type,
       ip: ctx.request.ip,
-    });
-    const response: DocumentImportTaskResponse = await job.finished();
-    if ("error" in response) {
-      throw InvalidRequestError(response.error);
-    }
-
-    const document = await Document.findByPk(response.documentId, {
-      userId: user.id,
-      rejectOnEmpty: true,
     });
 
     ctx.body = {
@@ -1771,6 +1818,7 @@ router.post(
 router.post(
   "documents.remove_user",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerHour),
   validate(T.DocumentsRemoveUserSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsRemoveUserReq>) => {
@@ -1816,6 +1864,7 @@ router.post(
 router.post(
   "documents.add_group",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerHour),
   validate(T.DocumentsAddGroupSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsAddGroupsReq>) => {
@@ -1876,6 +1925,7 @@ router.post(
 router.post(
   "documents.remove_group",
   auth(),
+  rateLimiter(RateLimiterStrategy.OneHundredPerHour),
   validate(T.DocumentsRemoveGroupSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsRemoveGroupReq>) => {
@@ -1934,9 +1984,7 @@ router.post(
 
     if (query) {
       userWhere = {
-        name: {
-          [Op.iLike]: `%${query}%`,
-        },
+        name: { [Op.iLike]: QueryHelper.likeContains(query) },
       };
     }
 
@@ -1996,9 +2044,7 @@ router.post(
 
     if (query) {
       groupWhere = {
-        name: {
-          [Op.iLike]: `%${query}%`,
-        },
+        name: { [Op.iLike]: QueryHelper.likeContains(query) },
       };
     }
 
@@ -2046,6 +2092,7 @@ router.post(
 router.post(
   "documents.empty_trash",
   auth({ role: UserRole.Admin }),
+  rateLimiter(RateLimiterStrategy.TenPerHour),
   async (ctx: APIContext) => {
     const { user } = ctx.state.auth;
 

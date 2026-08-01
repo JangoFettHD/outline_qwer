@@ -12,6 +12,7 @@ import {
   UserRole,
 } from "@shared/types";
 import { ImportValidation } from "@shared/validations";
+import collectionDuplicator from "@server/commands/collectionDuplicator";
 import collectionExporter from "@server/commands/collectionExporter";
 import teamUpdater from "@server/commands/teamUpdater";
 import auth from "@server/middlewares/authentication";
@@ -42,6 +43,7 @@ import {
 import type { APIContext } from "@server/types";
 import { RateLimiterStrategy } from "@server/utils/RateLimiter";
 import { collectionIndexing } from "@server/utils/indexing";
+import { QueryHelper } from "@server/storage/QueryHelper";
 import pagination from "../middlewares/pagination";
 import * as T from "./schema";
 import { InvalidRequestError } from "@server/errors";
@@ -101,6 +103,36 @@ router.post(
     ctx.body = {
       data: await presentCollection(ctx, reloaded),
       policies: presentPolicies(user, [reloaded]),
+    };
+  }
+);
+
+router.post(
+  "collections.duplicate",
+  rateLimiter(RateLimiterStrategy.TwentyFivePerMinute),
+  auth(),
+  validate(T.CollectionsDuplicateSchema),
+  transaction(),
+  async (ctx: APIContext<T.CollectionsDuplicateReq>) => {
+    const { transaction } = ctx.state;
+    const { id, name } = ctx.input.body;
+    const { user } = ctx.state.auth;
+
+    const collection = await Collection.findByPk(id, {
+      userId: user.id,
+      transaction,
+      rejectOnEmpty: true,
+    });
+    authorize(user, "duplicate", collection);
+
+    const duplicated = await collectionDuplicator(ctx, {
+      collection,
+      name,
+    });
+
+    ctx.body = {
+      data: await presentCollection(ctx, duplicated),
+      policies: presentPolicies(user, [duplicated]),
     };
   }
 );
@@ -307,9 +339,7 @@ router.post(
 
     if (query) {
       groupWhere = {
-        name: {
-          [Op.iLike]: `%${query}%`,
-        },
+        name: { [Op.iLike]: QueryHelper.likeContains(query) },
       };
     }
 
@@ -458,9 +488,7 @@ router.post(
 
     if (query) {
       userWhere = {
-        name: {
-          [Op.iLike]: `%${query}%`,
-        },
+        name: { [Op.iLike]: QueryHelper.likeContains(query) },
       };
     }
 
@@ -725,11 +753,17 @@ router.post(
       ],
     };
 
+    const includeArchived = !!statusFilter?.includes(
+      CollectionStatusFilter.Archived
+    );
+
     if (!statusFilter) {
       where[Op.and].push({ archivedAt: { [Op.eq]: null } });
     }
 
-    if (!includeListOnly || !user.isAdmin) {
+    // Admins can restore any archived collection, including private ones they
+    // are not a member of, so they must be able to see them listed.
+    if (!user.isAdmin || !(includeListOnly || includeArchived)) {
       where[Op.and].push({ id: collectionIds });
     }
 
@@ -740,7 +774,7 @@ router.post(
     }
 
     const statusQuery = [];
-    if (statusFilter?.includes(CollectionStatusFilter.Archived)) {
+    if (includeArchived) {
       statusQuery.push({
         archivedAt: {
           [Op.ne]: null,
@@ -754,11 +788,11 @@ router.post(
       });
     }
 
-    const replacements = { query: `%${query}%` };
+    const replacements = { query: QueryHelper.likeContains(query ?? "") };
 
     const [collections, total] = await Promise.all([
       Collection.scope(
-        statusFilter?.includes(CollectionStatusFilter.Archived)
+        includeArchived
           ? [
               {
                 method: ["withMembership", user.id],

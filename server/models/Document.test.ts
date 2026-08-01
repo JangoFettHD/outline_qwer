@@ -1,5 +1,5 @@
-import { EmptyResultError } from "sequelize";
-import { CollectionPermission } from "@shared/types";
+import { EmptyResultError, Op } from "sequelize";
+import { CollectionPermission, DocumentPermission } from "@shared/types";
 import slugify from "@shared/utils/slugify";
 import { parser } from "@server/editor";
 import Document from "@server/models/Document";
@@ -181,6 +181,80 @@ describe("#findAllChildDocumentIds", () => {
     expect(results[0]).toBe(document2.id);
     expect(results[1]).toBe(document3.id);
   });
+
+  test("should apply where filter and prune unmatched branches", async () => {
+    const team = await buildTeam();
+    const user = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      userId: user.id,
+      teamId: team.id,
+    });
+    const document = await buildDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      title: "test",
+    });
+    const publishedChild = await buildDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      parentDocumentId: document.id,
+      title: "published",
+    });
+    // A draft (unpublished) child, with its own nested child.
+    const draftChild = await buildDraftDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      parentDocumentId: document.id,
+      title: "draft",
+    });
+    await buildDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      parentDocumentId: draftChild.id,
+      title: "published under draft",
+    });
+
+    const results = await document.findAllChildDocumentIds({
+      publishedAt: {
+        [Op.ne]: null,
+      },
+    });
+    // Only the published child is returned; the draft branch is pruned so its
+    // descendants are not traversed.
+    expect(results).toEqual([publishedChild.id]);
+  });
+
+  test("should include soft-deleted children when paranoid is false", async () => {
+    const team = await buildTeam();
+    const user = await buildUser({ teamId: team.id });
+    const collection = await buildCollection({
+      userId: user.id,
+      teamId: team.id,
+    });
+    const document = await buildDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      title: "test",
+    });
+    const child = await buildDocument({
+      userId: user.id,
+      teamId: team.id,
+      collectionId: collection.id,
+      parentDocumentId: document.id,
+      title: "child",
+    });
+    await child.destroy();
+
+    expect(await document.findAllChildDocumentIds()).toEqual([]);
+    expect(
+      await document.findAllChildDocumentIds(undefined, { paranoid: false })
+    ).toEqual([child.id]);
+  });
 });
 
 describe("#findByPk", () => {
@@ -224,6 +298,66 @@ describe("#findByPk", () => {
         rejectOnEmpty: true,
       })
     ).rejects.toThrow(EmptyResultError);
+  });
+
+  it("should omit content columns when includeContent is false", async () => {
+    const document = await buildDocument({ text: "# Heading" });
+
+    const response = await Document.findByPk(document.id, {
+      includeContent: false,
+    });
+    expect(response?.id).toBe(document.id);
+    expect(response?.title).toBe(document.title);
+    expect(response?.dataValues.content).toBeUndefined();
+    expect(response?.dataValues.text).toBeUndefined();
+    expect(response?.dataValues.state).toBeUndefined();
+
+    const withContent = await Document.findByPk(document.id);
+    expect(withContent?.dataValues.content).toBeDefined();
+    expect(withContent?.dataValues.text).toBeDefined();
+  });
+
+  it("should not allow a passed where to override the id", async () => {
+    const document = await buildDocument();
+    const other = await buildDocument();
+
+    const response = await Document.findByPk(document.id, {
+      where: { id: other.id },
+    });
+    expect(response?.id).toBe(document.id);
+
+    const byUrlId = await Document.findByPk(document.urlId, {
+      where: { urlId: other.urlId },
+    });
+    expect(byUrlId?.id).toBe(document.id);
+  });
+
+  it("should throw the passed error when rejectOnEmpty is an error", async () => {
+    const error = new Error("does not exist");
+    await expect(
+      Document.findByPk("0e8280ea-7b4c-40e5-98ba-ec8a2f00f5e8", {
+        rejectOnEmpty: error,
+      })
+    ).rejects.toThrow(error);
+  });
+
+  it("should load state as a fallback when content is empty", async () => {
+    const state = Buffer.from([1, 2, 3]);
+    const document = await buildDocument();
+    await Document.unscoped().update(
+      { content: null, state },
+      { where: { id: document.id }, hooks: false, silent: true }
+    );
+
+    const response = await Document.findByPk(document.id);
+    expect(response?.state).toEqual(state);
+  });
+
+  it("should not load state when content is available", async () => {
+    const document = await buildDocument();
+    const response = await Document.findByPk(document.id);
+    expect(response?.content).toBeTruthy();
+    expect(response?.state).toBeNull();
   });
 });
 
@@ -294,6 +428,56 @@ describe("findByIds", () => {
         userId: user.id,
       }
     );
+    expect(documents.length).toBe(1);
+  });
+
+  it("should not return another user's unfiled draft", async () => {
+    const team = await buildTeam();
+    const author = await buildUser({ teamId: team.id });
+    const user = await buildUser({ teamId: team.id });
+    const draft = await buildDraftDocument({
+      teamId: team.id,
+      userId: author.id,
+      collectionId: null,
+    });
+    const documents = await Document.findByIds([draft.id], {
+      userId: user.id,
+    });
+    expect(documents.length).toBe(0);
+  });
+
+  it("should return the user's own unfiled draft", async () => {
+    const team = await buildTeam();
+    const user = await buildUser({ teamId: team.id });
+    const draft = await buildDraftDocument({
+      teamId: team.id,
+      userId: user.id,
+      collectionId: null,
+    });
+    const documents = await Document.findByIds([draft.id], {
+      userId: user.id,
+    });
+    expect(documents.length).toBe(1);
+  });
+
+  it("should return an unfiled draft shared with the user", async () => {
+    const team = await buildTeam();
+    const author = await buildUser({ teamId: team.id });
+    const user = await buildUser({ teamId: team.id });
+    const draft = await buildDraftDocument({
+      teamId: team.id,
+      userId: author.id,
+      collectionId: null,
+    });
+    await UserMembership.create({
+      createdById: author.id,
+      documentId: draft.id,
+      userId: user.id,
+      permission: DocumentPermission.Read,
+    });
+    const documents = await Document.findByIds([draft.id], {
+      userId: user.id,
+    });
     expect(documents.length).toBe(1);
   });
 });
