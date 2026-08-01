@@ -76,3 +76,9 @@ RecentSearchesSection.priority = -0.1;
 export const TrashSection = ({ t }: ActionContext) => t("Trash");
 
 export const Bitrix24Section = ({ t }: ActionContext) => t("Bitrix24");
+
+// kbar ranks a section by `section.priority || score`, and the fuse score is
+// always ~0.83–1.0 — so leaving this unset would float Bitrix24 results above
+// the user's own documents. Must be non-zero (0 is falsy and would fall back
+// to the score), and below SearchResultsSection (-1).
+Bitrix24Section.priority = -1.1;

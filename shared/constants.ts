@@ -60,6 +60,10 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.DisabledEmbeds]: [],
   [TeamPreference.Bitrix24PortalUrl]: undefined,
   [TeamPreference.ShowBitrix24Button]: false,
+  // getPreference() falls back to `?? false`, so without an explicit default
+  // here the mention bridge would be permanently off — the processor's
+  // `=== false` guard would short-circuit for every team.
+  [TeamPreference.Bitrix24MentionNotifications]: true,
 };
 
 export const UserPreferenceDefaults: UserPreferences = {
