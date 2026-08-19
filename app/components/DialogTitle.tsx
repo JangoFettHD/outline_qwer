@@ -13,7 +13,7 @@ type Props = {
   /** The title of the dialog. */
   title: React.ReactNode;
   /** The document or collection that the dialog acts upon. */
-  model: Document | Collection;
+  model?: Document | Collection;
 };
 
 /**
@@ -27,6 +27,11 @@ export const DialogTitle = observer(function DialogTitle_({
   model,
 }: Props) {
   const { ui } = useStores();
+
+  if (!model) {
+    return <>{title}</>;
+  }
+
   const isDocument = model instanceof Document;
 
   if (
@@ -80,5 +85,10 @@ const Subject = styled(Text)`
 
   > :first-child {
     flex-shrink: 0;
+  }
+
+  // Allows the truncated text to shrink rather than widen its ancestors
+  > :last-child {
+    min-width: 0;
   }
 `;

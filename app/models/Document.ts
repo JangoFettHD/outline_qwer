@@ -1,4 +1,4 @@
-import { addDays, differenceInDays } from "date-fns";
+import { addDays, differenceInDays, differenceInSeconds } from "date-fns";
 import i18n, { t } from "i18next";
 import { capitalize, floor } from "es-toolkit/compat";
 import { action, autorun, comparer, computed, observable, set } from "mobx";
@@ -181,8 +181,11 @@ export default class Document extends ArchivableModel implements Searchable {
   @Relation(() => Document, { onArchive: "cascade", onDelete: "cascade" })
   parentDocument?: Document;
 
+  /**
+   * The ids of users that have edited this document.
+   */
   @observable
-  collaboratorIds: string[] = [];
+  collaboratorIds: string[] | undefined;
 
   @Relation(() => User)
   createdBy: User | undefined;
@@ -309,7 +312,7 @@ export default class Document extends ArchivableModel implements Searchable {
 
   @computed
   get collaborators(): User[] {
-    return this.collaboratorIds
+    return (this.collaboratorIds ?? [])
       .map((id) => this.store.rootStore.users.get(id))
       .filter(Boolean) as User[];
   }
@@ -404,6 +407,16 @@ export default class Document extends ArchivableModel implements Searchable {
   @computed
   get isPersistedOnce(): boolean {
     return this.createdAt === this.updatedAt;
+  }
+
+  /**
+   * Whether the document was created moments ago, and so cannot yet have views, comments, shares,
+   * or backlinks of its own.
+   *
+   * @returns true if the document was created within the last ten seconds.
+   */
+  get isJustCreated(): boolean {
+    return differenceInSeconds(new Date(), new Date(this.createdAt)) < 10;
   }
 
   @computed
@@ -666,18 +679,29 @@ export default class Document extends ArchivableModel implements Searchable {
     );
   }
 
-  download = ({
+  /**
+   * Download the document in the given format.
+   *
+   * Nested documents are included by default when the document has children, in
+   * which case the file is prepared in the background and the user is notified
+   * with a toast once it is ready.
+   *
+   * @param options.contentType The format to export the document in.
+   * @param options.includeChildDocuments Whether to include nested documents.
+   * @returns the API response.
+   */
+  download = async ({
     contentType,
-    includeChildDocuments,
+    includeChildDocuments = this.children.length > 0,
   }: {
     contentType: ExportContentType;
     includeChildDocuments?: boolean;
-  }) =>
-    client.post(
+  }) => {
+    const response = await client.post(
       `/documents.export`,
       {
         id: this.id,
-        includeChildDocuments: includeChildDocuments ?? false,
+        includeChildDocuments,
       },
       {
         ...(includeChildDocuments ? {} : { download: true }),
@@ -686,4 +710,12 @@ export default class Document extends ArchivableModel implements Searchable {
         },
       }
     );
+
+    const fileOperation = response?.data?.fileOperation;
+    if (fileOperation) {
+      this.store.rootStore.ui.showExportToast(fileOperation.id);
+    }
+
+    return response;
+  };
 }

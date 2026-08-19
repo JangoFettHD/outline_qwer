@@ -73,6 +73,12 @@ function Details() {
   const [showBitrix24Button, setShowBitrix24Button] = useState(
     team.getPreference(TeamPreference.ShowBitrix24Button) ?? false
   );
+  const [zpqwerPortalUrl, setZpqwerPortalUrl] = useState(
+    team.getPreference(TeamPreference.ZpqwerPortalUrl) || ""
+  );
+  const [showZpqwerButton, setShowZpqwerButton] = useState(
+    team.getPreference(TeamPreference.ShowZpqwerButton) ?? false
+  );
   const [bitrix24MentionNotifications, setBitrix24MentionNotifications] =
     useState(
       team.getPreference(TeamPreference.Bitrix24MentionNotifications) ?? true
@@ -118,6 +124,8 @@ function Details() {
             tocPosition,
             bitrix24PortalUrl: bitrix24PortalUrl || null,
             showBitrix24Button,
+            zpqwerPortalUrl: zpqwerPortalUrl || null,
+            showZpqwerButton,
           },
         });
         toast.success(t("Settings saved"));
@@ -136,6 +144,8 @@ function Details() {
       customTheme,
       bitrix24PortalUrl,
       showBitrix24Button,
+      zpqwerPortalUrl,
+      showZpqwerButton,
       t,
     ]
   );
@@ -191,6 +201,16 @@ function Details() {
     async (checked: boolean) => {
       setShowBitrix24Button(checked);
       team.setPreference(TeamPreference.ShowBitrix24Button, checked);
+      await team.save();
+      toast.success(t("Settings saved"));
+    },
+    [team, t]
+  );
+
+  const handleShowZpqwerButtonChange = React.useCallback(
+    async (checked: boolean) => {
+      setShowZpqwerButton(checked);
+      team.setPreference(TeamPreference.ShowZpqwerButton, checked);
       await team.save();
       toast.success(t("Settings saved"));
     },
@@ -441,7 +461,6 @@ function Details() {
             />
           </SettingRow>
           <SettingRow
-            border={false}
             label={t("Bitrix24 portal URL")}
             name="bitrix24PortalUrl"
             description={t(
@@ -455,6 +474,35 @@ function Details() {
                 setBitrix24PortalUrl(ev.target.value);
               }}
               placeholder="https://qwer.bitrix24.ru"
+            />
+          </SettingRow>
+          <SettingRow
+            name={TeamPreference.ShowZpqwerButton}
+            label={t("Show staff portal button")}
+            description={t(
+              "Display a link to the staff portal in the sidebar navigation."
+            )}
+          >
+            <Switch
+              id={TeamPreference.ShowZpqwerButton}
+              name={TeamPreference.ShowZpqwerButton}
+              checked={showZpqwerButton}
+              onChange={handleShowZpqwerButtonChange}
+            />
+          </SettingRow>
+          <SettingRow
+            border={false}
+            label={t("Staff portal URL")}
+            name="zpqwerPortalUrl"
+            description={t("The URL of your staff portal.")}
+          >
+            <Input
+              id="zpqwerPortalUrl"
+              value={zpqwerPortalUrl}
+              onChange={(ev: React.ChangeEvent<HTMLInputElement>) => {
+                setZpqwerPortalUrl(ev.target.value);
+              }}
+              placeholder="https://my.qwer.agency"
             />
           </SettingRow>
 

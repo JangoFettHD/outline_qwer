@@ -1,6 +1,6 @@
 /* oxlint-disable lines-between-class-members */
 import fractionalIndex from "fractional-index";
-import { find, findIndex, isNil, remove, uniq } from "es-toolkit/compat";
+import { find, findIndex, isNil, keyBy, remove, uniq } from "es-toolkit/compat";
 import type {
   Identifier,
   Transaction,
@@ -857,27 +857,49 @@ class Collection extends ParanoidModel<
     return this;
   };
 
-  deleteDocument = async (document: Document, options?: FindOptions) => {
+  /**
+   * Removes a document from this collection's structure and soft deletes it
+   * along with all of its descendants.
+   *
+   * @param document the document to delete.
+   * @param user the user performing the deletion, recorded on every document.
+   * @param options the find options, including an optional transaction.
+   */
+  deleteDocument = async (
+    document: Document,
+    user: User,
+    options?: FindOptions
+  ) => {
     await this.removeDocumentInStructure(document, options);
 
-    // Helper to destroy all child documents for a document
-    const loopChildren = async (
-      documentId: string,
-      opts?: FindOptions<Document>
-    ) => {
+    // IDs come back breadth-first so reversing them destroys the deepest
+    // descendants first.
+    const childDocumentIds = (
+      await document.findAllChildDocumentIds(undefined, options)
+    ).reverse();
+
+    if (childDocumentIds.length) {
       const childDocuments = await Document.findAll({
+        ...options,
         where: {
-          parentDocumentId: documentId,
+          id: childDocumentIds,
         },
       });
+      const childDocumentsById = keyBy(childDocuments, (child) => child.id);
 
-      for (const child of childDocuments) {
-        await loopChildren(child.id, opts);
-        await child.destroy(opts);
+      // Destroyed one at a time to ensure model hooks run for each document.
+      for (const childDocumentId of childDocumentIds) {
+        const childDocument = childDocumentsById[childDocumentId];
+        if (childDocument) {
+          // Attributes the deletion of the whole tree to the acting user, which
+          // the trash relies on to show a person their own deletions.
+          childDocument.lastModifiedById = user.id;
+          childDocument.updatedBy = user;
+          await childDocument.destroy(options);
+        }
       }
-    };
+    }
 
-    await loopChildren(document.id, options);
     await document.destroy(options);
   };
 

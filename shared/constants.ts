@@ -10,6 +10,9 @@ import {
 
 export const MAX_AVATAR_DISPLAY = 6;
 
+/** Height of the app's fixed header in pixels. */
+export const HEADER_HEIGHT = 56;
+
 /** Preset colors offered when choosing an icon color. */
 export const colorPalette = [
   "#4E5C6E",
@@ -43,6 +46,36 @@ export const CSRF = {
   fieldName: "_csrf",
 };
 
+/** The maximum number of sub-requests permitted in a single `/batch` request. */
+export const BatchMaxRequests = 25;
+
+/**
+ * RPC methods that may be coalesced into a single `/batch` request. Deliberately
+ * curated to simple JSON mutations — no reads, redirects, file responses, or
+ * endpoints that set response headers. Shared by the client (which collects
+ * these into a batch) and the server (which only dispatches allowlisted methods).
+ *
+ * When adding a method, also add its router to `dispatchableRouters` in
+ * server/routes/api/batch/batch.ts so the server can resolve its middleware.
+ */
+export const BatchableApiMethods = [
+  "documents.update",
+  "documents.move",
+  "documents.archive",
+  "documents.restore",
+  "documents.unpublish",
+  "documents.delete",
+  "collections.update",
+  "collections.move",
+  "collections.archive",
+  "collections.restore",
+  "collections.delete",
+  "stars.create",
+  "stars.delete",
+  "pins.create",
+  "pins.delete",
+] as const;
+
 export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.SeamlessEdit]: true,
   [TeamPreference.ViewersCanExport]: true,
@@ -64,6 +97,8 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   // here the mention bridge would be permanently off — the processor's
   // `=== false` guard would short-circuit for every team.
   [TeamPreference.Bitrix24MentionNotifications]: true,
+  [TeamPreference.ZpqwerPortalUrl]: undefined,
+  [TeamPreference.ShowZpqwerButton]: false,
 };
 
 export const UserPreferenceDefaults: UserPreferences = {

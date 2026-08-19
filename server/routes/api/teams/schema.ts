@@ -87,6 +87,16 @@ export const TeamsUpdateSchema = BaseSchema.extend({
         showBitrix24Button: z.boolean().optional(),
         /** Deliver @mention notifications into Bitrix24 messenger. */
         bitrix24MentionNotifications: z.boolean().optional(),
+        /** URL of the agency staff portal (zpqwer). http/https only. */
+        zpqwerPortalUrl: z
+          .string()
+          .url()
+          .refine((v) => /^https?:\/\//i.test(v), {
+            message: "Portal URL must start with http:// or https://",
+          })
+          .nullish(),
+        /** Whether to show the staff portal button in the sidebar. */
+        showZpqwerButton: z.boolean().optional(),
       })
       .optional(),
   }),
