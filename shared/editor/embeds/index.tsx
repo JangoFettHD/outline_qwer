@@ -9,6 +9,7 @@ import { urlRegex } from "../../utils/urls";
 import Image from "../components/Img";
 import Berrycast from "./Berrycast";
 import Bitrix24 from "./Bitrix24";
+import Zpqwer from "./Zpqwer";
 import Diagrams from "./Diagrams";
 import Dropbox from "./Dropbox";
 import Gist from "./Gist";
@@ -161,6 +162,20 @@ const embeds: EmbedDescriptor[] = [
       /^https?:\/\/[a-z0-9-]+\.bitrix24\.[a-z]{2,4}\/(workgroups\/group\/\d+\/tasks\/task\/view\/\d+|workgroups\/group\/\d+|company\/personal\/user\/\d+\/tasks\/task\/view\/\d+|company\/personal\/user\/\d+|crm\/(deal|contact|company|lead)\/details\/\d+|online|im\/messenger|calendar)/i,
     ],
     component: Bitrix24,
+  }),
+  // ZPQWER — the agency staff portal (my.qwer.agency): projects,
+  // counterparties, specialists, estimates and services. Card data is fetched
+  // per viewer through plugins/zpqwer/server/unfurl.ts.
+  new EmbedDescriptor({
+    id: "zpqwer",
+    title: "ZPQWER",
+    keywords:
+      "zpqwer qwer кабинет портал проект клиент контрагент смета услуга сотрудник",
+    icon: <Img src="/images/link.png" alt="ZPQWER" />,
+    regexMatch: [
+      /^https?:\/\/my\.qwer\.agency(?::\d+)?\/(?:admin\/(?:projects|counterparties|specialists)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|sales\/calc\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|sales\/services\/[a-z0-9_-]{2,64})(?:[/?#]|$)/i,
+    ],
+    component: Zpqwer,
   }),
   new EmbedDescriptor({
     id: "berrycast",
