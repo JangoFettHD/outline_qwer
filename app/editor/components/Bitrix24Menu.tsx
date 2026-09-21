@@ -165,7 +165,15 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
   }, [request, isActive]);
 
   const renderMenuItem = React.useCallback(
-    (item: Bitrix24Item, _index: number, options) => (
+    (
+      item: Bitrix24Item,
+      _index: number,
+      options: {
+        selected: boolean;
+        disclosure?: boolean;
+        onClick: (event: React.SyntheticEvent) => void;
+      }
+    ) => (
       <SuggestionsMenuItem
         {...options}
         title={item.title}

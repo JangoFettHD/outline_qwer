@@ -5,11 +5,12 @@ import { createFilterSchema } from "@shared/helpers/FilterHelper";
 import {
   DirectionFilter,
   DocumentPermission,
+  HeadingPrefixStyle,
   StatusFilter,
   TextEditMode,
   SortFilter,
 } from "@shared/types";
-import { DocumentValidation } from "@shared/validations";
+import { DeprecationValidation, DocumentValidation } from "@shared/validations";
 import { BaseSchema } from "@server/routes/api/schema";
 import { zodIconType, zodIdType, zodShareIdType } from "@server/utils/zod";
 import { ValidateColor } from "@server/validation";
@@ -379,6 +380,13 @@ export type DocumentsTemplatizeReq = z.infer<typeof DocumentsTemplatizeSchema>;
 
 export const DocumentsUpdateSchema = BaseSchema.extend({
   body: BaseIdSchema.extend({
+    /** The reason the document is archived or deleted. */
+    deprecatedReason: z
+      .string()
+      .trim()
+      .max(DeprecationValidation.maxReasonLength)
+      .nullish(),
+
     /** Doc title to be updated */
     title: z.string().optional(),
 
@@ -396,6 +404,14 @@ export const DocumentsUpdateSchema = BaseSchema.extend({
 
     /** Boolean to denote if the doc should occupy full width */
     fullWidth: z.boolean().optional(),
+
+    /** Display preferences for the doc */
+    preferences: z
+      .object({
+        /** The style of prefix displayed before headings in the doc */
+        headingPrefix: z.enum(HeadingPrefixStyle).optional(),
+      })
+      .nullish(),
 
     /** Boolean to denote if insights should be visible on the doc */
     insightsEnabled: z.boolean().optional(),
@@ -484,13 +500,26 @@ export const DocumentsMoveSchema = BaseSchema.extend({
 export type DocumentsMoveReq = z.infer<typeof DocumentsMoveSchema>;
 
 export const DocumentsArchiveSchema = BaseSchema.extend({
-  body: BaseIdSchema,
+  body: BaseIdSchema.extend({
+    /** The reason for archiving the document. */
+    reason: z
+      .string()
+      .trim()
+      .max(DeprecationValidation.maxReasonLength)
+      .nullish(),
+  }),
 });
 
 export type DocumentsArchiveReq = z.infer<typeof DocumentsArchiveSchema>;
 
 export const DocumentsDeleteSchema = BaseSchema.extend({
   body: BaseIdSchema.extend({
+    /** The reason for deleting the document. */
+    reason: z
+      .string()
+      .trim()
+      .max(DeprecationValidation.maxReasonLength)
+      .nullish(),
     /** Whether to permanently delete the doc as opposed to soft-delete */
     permanent: z.boolean().optional(),
   }),
@@ -586,6 +615,14 @@ export const DocumentsCreateSchema = BaseSchema.extend({
 
     /** Boolean to denote if the document should occupy full width */
     fullWidth: z.boolean().optional(),
+
+    /** Display preferences for the document */
+    preferences: z
+      .object({
+        /** The style of prefix displayed before headings in the document */
+        headingPrefix: z.enum(HeadingPrefixStyle).optional(),
+      })
+      .nullish(),
   }),
 }).refine(
   (req) =>

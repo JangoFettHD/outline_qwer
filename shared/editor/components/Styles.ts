@@ -285,7 +285,7 @@ const codeBlockStyle = (props: Props) => css`
 
 const diffStyle = (props: Props) => css`
   .${EditorStyleHelper.diffNodeInsertion},
-    .${EditorStyleHelper.diffInsertion}:not([class^="component-"]),
+  .${EditorStyleHelper.diffInsertion}:not([class^="component-"]),
   .${EditorStyleHelper.diffInsertion} > * {
     color: ${props.theme.textDiffInserted};
     background-color: ${props.theme.textDiffInsertedBackground};
@@ -311,19 +311,19 @@ const diffStyle = (props: Props) => css`
   }
 
   .${EditorStyleHelper.diffNodeInsertion}[class*="component-"],
-    .${EditorStyleHelper.diffNodeInsertion}.math-node,
-    ul.${EditorStyleHelper.diffNodeInsertion},
-    li.${EditorStyleHelper.diffNodeInsertion} {
+  .${EditorStyleHelper.diffNodeInsertion}.math-node,
+  ul.${EditorStyleHelper.diffNodeInsertion},
+  li.${EditorStyleHelper.diffNodeInsertion} {
     border-radius: ${EditorStyleHelper.blockRadius};
   }
 
   td.${EditorStyleHelper.diffNodeInsertion},
-    th.${EditorStyleHelper.diffNodeInsertion} {
+  th.${EditorStyleHelper.diffNodeInsertion} {
     border-color: ${props.theme.textDiffInsertedBackground};
   }
 
   .${EditorStyleHelper.diffNodeDeletion},
-    .${EditorStyleHelper.diffDeletion}:not([class^="component-"]),
+  .${EditorStyleHelper.diffDeletion}:not([class^="component-"]),
   .${EditorStyleHelper.diffDeletion} > * {
     color: ${props.theme.textDiffDeleted};
     background-color: ${props.theme.textDiffDeletedBackground};
@@ -353,19 +353,19 @@ const diffStyle = (props: Props) => css`
   }
 
   .${EditorStyleHelper.diffNodeDeletion}[class*="component-"],
-    .${EditorStyleHelper.diffNodeDeletion}.math-node,
-    ul.${EditorStyleHelper.diffNodeDeletion},
-    li.${EditorStyleHelper.diffNodeDeletion} {
+  .${EditorStyleHelper.diffNodeDeletion}.math-node,
+  ul.${EditorStyleHelper.diffNodeDeletion},
+  li.${EditorStyleHelper.diffNodeDeletion} {
     border-radius: ${EditorStyleHelper.blockRadius};
   }
 
   td.${EditorStyleHelper.diffNodeDeletion},
-    th.${EditorStyleHelper.diffNodeDeletion} {
+  th.${EditorStyleHelper.diffNodeDeletion} {
     border-color: ${props.theme.textDiffDeletedBackground};
   }
 
   .${EditorStyleHelper.diffNodeModification},
-    .${EditorStyleHelper.diffModification}:not([class^="component-"]),
+  .${EditorStyleHelper.diffModification}:not([class^="component-"]),
   .${EditorStyleHelper.diffModification} > * {
     color: ${props.theme.text};
     background-color: ${transparentize(0.7, "#FFA500")};
@@ -392,14 +392,14 @@ const diffStyle = (props: Props) => css`
   }
 
   .${EditorStyleHelper.diffNodeModification}[class*="component-"],
-    .${EditorStyleHelper.diffNodeModification}.math-node,
-    ul.${EditorStyleHelper.diffNodeModification},
-    li.${EditorStyleHelper.diffNodeModification} {
+  .${EditorStyleHelper.diffNodeModification}.math-node,
+  ul.${EditorStyleHelper.diffNodeModification},
+  li.${EditorStyleHelper.diffNodeModification} {
     border-radius: ${EditorStyleHelper.blockRadius};
   }
 
   td.${EditorStyleHelper.diffNodeModification},
-    th.${EditorStyleHelper.diffNodeModification} {
+  th.${EditorStyleHelper.diffNodeModification} {
     border-color: ${transparentize(0.5, "#FFA500")};
   }
 `;
@@ -545,6 +545,7 @@ width: 100%;
 
 .mention {
   background: ${props.theme.mentionBackground};
+  color: ${props.theme.text};
   border-radius: 8px;
   padding-top: 1px;
   padding-bottom: 1px;
@@ -560,9 +561,50 @@ width: 100%;
   gap: 4px;
   vertical-align: bottom;
 
+  /* Keep icons at their intended size when the mention wraps. */
+  &::before,
+  svg,
+  img {
+    flex-shrink: 0;
+  }
+
+  /* External resource titles stay on one line, while internal mentions can
+     wrap to fit constrained containers such as table cells. */
+  &[data-type="issue"],
+  &[data-type="pull_request"],
+  &[data-type="project"],
+  &[data-type="url"] {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+
+    span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      /* Text sets white-space: normal, so nowrap cannot simply be inherited. */
+      white-space: nowrap;
+    }
+
+    /* Only the label truncates; trailing identifiers stay whole. */
+    span ~ span {
+      flex-shrink: 0;
+    }
+  }
+
   &:${hover} {
     cursor: default;
     background: ${props.theme.mentionHoverBackground};
+  }
+
+  /* Date mentions only open the picker when editable, so no hover affordance
+     in read-only mode. */
+  ${
+    props.readOnly
+      ? `&[data-type="date"]:${hover} {
+    background: ${props.theme.mentionBackground};
+  }`
+      : ""
   }
 
   &[data-type="user"],
@@ -646,7 +688,7 @@ width: 100%;
       margin-top: 0.25em;
     }
 
-    &:not(.placeholder) {
+    &:not(.placeholder):not([data-heading-prefix]) {
       &::before {
         display: none;
         font-family: ${props.theme.fontFamilyMono};
@@ -684,6 +726,13 @@ width: 100%;
   h4 { font-size: var(--font-size-h4); }
   h5 { font-size: var(--font-size-h5); }
   h6 { font-size: var(--font-size-h6); }
+
+  [data-heading-prefix]::before {
+    content: attr(data-heading-prefix);
+    color: ${props.theme.text};
+    opacity: 0.75;
+    margin-inline-end: 0.25em;
+  }
 
   .${EditorStyleHelper.multiplayerSelection} {
     transition: background-color 500ms ease-in-out;
@@ -1065,22 +1114,22 @@ a:first-child {
   }
 }
 
-h1:not(.placeholder)::before {
+h1:not(.placeholder):not([data-heading-prefix])::before {
   content: "H1";
 }
-h2:not(.placeholder)::before {
+h2:not(.placeholder):not([data-heading-prefix])::before {
   content: "H2";
 }
-h3:not(.placeholder)::before {
+h3:not(.placeholder):not([data-heading-prefix])::before {
   content: "H3";
 }
-h4:not(.placeholder)::before {
+h4:not(.placeholder):not([data-heading-prefix])::before {
   content: "H4";
 }
-h5:not(.placeholder)::before {
+h5:not(.placeholder):not([data-heading-prefix])::before {
   content: "H5";
 }
-h6:not(.placeholder)::before {
+h6:not(.placeholder):not([data-heading-prefix])::before {
   content: "H6";
 }
 
@@ -1092,10 +1141,10 @@ h6:not(.placeholder)::before {
   h4,
   h5,
   h6 {
-    &:not(.placeholder)::before {
+    &:not(.placeholder):not([data-heading-prefix])::before {
       opacity: 1;
     }
-    &:hover:not(.placeholder)::before {
+    &:hover:not(.placeholder):not([data-heading-prefix])::before {
       opacity: 0;
     }
   }
@@ -1192,7 +1241,7 @@ h6:not(.placeholder)::before {
     .heading-anchor {
       display: inline-flex;
     }
-    &:not(.placeholder)::before {
+    &:not(.placeholder):not([data-heading-prefix])::before {
       display: ${props.readOnly ? "none" : "inline-block"};
     }
   }
@@ -2643,16 +2692,18 @@ del {
 }
 
 @media print {
+  // The heading level labels are an editing affordance, but the same pseudo
+  // element carries the heading prefix, which is content and must be printed.
   .placeholder::before,
   .block-menu-trigger,
   .heading-anchor,
   button.show-source-button,
-  h1:not(.placeholder)::before,
-  h2:not(.placeholder)::before,
-  h3:not(.placeholder)::before,
-  h4:not(.placeholder)::before,
-  h5:not(.placeholder)::before,
-  h6:not(.placeholder)::before {
+  h1:not(.placeholder):not([data-heading-prefix])::before,
+  h2:not(.placeholder):not([data-heading-prefix])::before,
+  h3:not(.placeholder):not([data-heading-prefix])::before,
+  h4:not(.placeholder):not([data-heading-prefix])::before,
+  h5:not(.placeholder):not([data-heading-prefix])::before,
+  h6:not(.placeholder):not([data-heading-prefix])::before {
     display: none;
   }
 
@@ -2704,15 +2755,20 @@ li > .${EditorStyleHelper.toggleBlock} {
     &:dir(ltr) {
       --rotate-by: -90deg;
     }
-    > .${EditorStyleHelper.toggleBlockContent} > :is(:not(.${EditorStyleHelper.toggleBlockHead})) {
-      display: none;
-    }
-    > .${EditorStyleHelper.toggleBlockContent} > :is(a.heading-name) {
-      display: unset;
+    /* Folded content is always included when printing */
+    @media not print {
+      > .${EditorStyleHelper.toggleBlockContent} > :is(:not(.${EditorStyleHelper.toggleBlockHead})) {
+        display: none;
+      }
+      > .${EditorStyleHelper.toggleBlockContent} > :is(a.heading-name) {
+        display: unset;
+      }
+      > .${EditorStyleHelper.toggleBlockButton} svg {
+        transform: rotate(var(--rotate-by));
+      }
     }
     > .${EditorStyleHelper.toggleBlockButton} {
       svg {
-        transform: rotate(var(--rotate-by));
         pointer-events: none;
       }
       opacity: 1;

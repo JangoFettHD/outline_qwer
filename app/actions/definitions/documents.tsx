@@ -1,4 +1,5 @@
 import copy from "copy-to-clipboard";
+import type { TFunction } from "i18next";
 import invariant from "invariant";
 import { capitalize, uniqBy } from "es-toolkit/compat";
 import {
@@ -30,6 +31,7 @@ import {
   GlobeIcon,
   LogoutIcon,
   CaseSensitiveIcon,
+  OrderedListIcon,
   RestoreIcon,
   EditIcon,
   EmbedIcon,
@@ -42,7 +44,12 @@ import {
 import { toast } from "sonner";
 import Icon from "@shared/components/Icon";
 import type { NavigationNode } from "@shared/types";
-import { ExportContentType, UserPreference } from "@shared/types";
+import {
+  DocumentPreference,
+  ExportContentType,
+  HeadingPrefixStyle,
+  UserPreference,
+} from "@shared/types";
 import { isMobile } from "@shared/utils/browser";
 import { Week } from "@shared/utils/time";
 import type UserMembership from "~/models/UserMembership";
@@ -55,6 +62,7 @@ import DocumentPublish from "~/scenes/DocumentPublish";
 import DeleteDocumentsInTrash from "~/scenes/Trash/components/DeleteDocumentsInTrash";
 import ConfirmationDialog from "~/components/ConfirmationDialog";
 import { DialogTitle } from "~/components/DialogTitle";
+import { DocumentArchiveDialog } from "~/components/DocumentArchiveDialog";
 import DocumentCopy from "~/components/DocumentExplorer/DocumentCopy";
 import MarkdownIcon from "~/components/Icons/MarkdownIcon";
 import { ImportDocumentDialog } from "~/components/ImportDocumentDialog";
@@ -712,10 +720,20 @@ export const shareDocument = createAction({
   },
 });
 
+/**
+ * Shows a file extension in the shortcut slot of menu items only, the command
+ * bar would otherwise register it as a key sequence.
+ */
+const fileExtensionHint =
+  (extension: string) =>
+  ({ isMenu }: ActionContext) =>
+    isMenu ? [extension] : undefined;
+
 export const downloadDocumentAsMarkdown = createAction({
   name: ({ t, isMenu }) => (isMenu ? t("Markdown") : t("Download as Markdown")),
   analyticsName: "Download document as Markdown",
   section: ActiveDocumentSection,
+  shortcut: fileExtensionHint(".md"),
   keywords: "md markdown export download",
   icon: <MarkdownIcon />,
   iconInContextMenu: false,
@@ -737,6 +755,7 @@ export const downloadDocumentAsHTML = createAction({
   name: ({ t, isMenu }) => (isMenu ? t("HTML") : t("Download as HTML")),
   analyticsName: "Download document as HTML",
   section: ActiveDocumentSection,
+  shortcut: fileExtensionHint(".html"),
   keywords: "xml html export download",
   icon: <CodeIcon />,
   iconInContextMenu: false,
@@ -759,6 +778,7 @@ export const downloadDocumentAsTextBundle = createAction({
     isMenu ? t("TextBundle") : t("Download as TextBundle"),
   analyticsName: "Download document as TextBundle",
   section: ActiveDocumentSection,
+  shortcut: fileExtensionHint(".textpack"),
   keywords: "textbundle textpack bear ulysses export download",
   icon: <ArchiveIcon />,
   iconInContextMenu: false,
@@ -780,6 +800,7 @@ export const downloadDocumentAsPDF = createAction({
   name: ({ t, isMenu }) => (isMenu ? t("PDF") : t("Download as PDF")),
   analyticsName: "Download document as PDF",
   section: ActiveDocumentSection,
+  shortcut: fileExtensionHint(".pdf"),
   keywords: "pdf export download",
   icon: <PDFIcon />,
   iconInContextMenu: false,
@@ -928,23 +949,25 @@ export const duplicateDocument = createAction({
   },
 });
 
+function pinToCollectionName({ getActiveModels, t, stores }: ActionContext) {
+  const documents = getActiveModels(Document);
+  if (documents.length === 1) {
+    const collectionName = stores.documents.getCollectionForDocument(
+      documents[0]
+    )?.name;
+    return t("Pin to {{collectionName}}", {
+      collectionName: collectionName ?? t("collection"),
+    });
+  }
+  return t("Pin");
+}
+
 /**
  * Pin a document to a collection. Pinned documents will be displayed at the top
  * of the collection for all collection members to see.
  */
 export const pinDocumentToCollection = createAction({
-  name: ({ getActiveModels, t, stores }) => {
-    const documents = getActiveModels(Document);
-    if (documents.length === 1) {
-      const collectionName = stores.documents.getCollectionForDocument(
-        documents[0]
-      )?.name;
-      return t("Pin to {{collectionName}}", {
-        collectionName: collectionName ?? t("collection"),
-      });
-    }
-    return t("Pin");
-  },
+  name: pinToCollectionName,
   analyticsName: "Pin document to collection",
   section: ActiveDocumentSection,
   icon: <PinIcon />,
@@ -1006,14 +1029,6 @@ export const pinDocumentToHome = createAction({
   },
 });
 
-export const pinDocument = createActionWithChildren({
-  name: ({ t }) => t("Pin"),
-  analyticsName: "Pin document",
-  section: ActiveDocumentSection,
-  icon: <PinIcon />,
-  children: [pinDocumentToCollection, pinDocumentToHome],
-});
-
 export const unpinDocument = createAction({
   name: ({ t }) => t("Unpin"),
   analyticsName: "Unpin document",
@@ -1037,6 +1052,82 @@ export const unpinDocument = createAction({
           ? t("Unpinned")
           : t("{{ count }} documents unpinned", { count: succeeded })
     ),
+});
+
+const allPinnedToCollection = (context: ActionContext) =>
+  everyActiveModel(context, Document, (document) => document.pinned);
+
+const nonePinnedToCollection = (context: ActionContext) =>
+  everyActiveModel(context, Document, (document) => !document.pinned);
+
+/**
+ * Toggle whether a document is pinned to its collection, the current state is
+ * reflected in the item so the label does not change between the two.
+ */
+export const togglePinDocumentToCollection = createAction({
+  name: pinToCollectionName,
+  analyticsName: "Toggle pin document to collection",
+  section: ActiveDocumentSection,
+  icon: <PinIcon />,
+  iconInContextMenu: false,
+  selected: allPinnedToCollection,
+  visible: (context) =>
+    // A mixed selection has no single state to toggle to, the one-way Pin and
+    // Unpin actions cover that case instead.
+    (allPinnedToCollection(context) || nonePinnedToCollection(context)) &&
+    everyActiveModel(context, Document, (document) => {
+      const can = context.stores.policies.abilities(document.id);
+      return !!document.collectionId && (document.pinned ? can.unpin : can.pin);
+    }),
+  perform: (context) =>
+    allPinnedToCollection(context)
+      ? unpinDocument.perform(context)
+      : pinDocumentToCollection.perform(context),
+});
+
+/**
+ * Toggle whether a document is pinned to team home, the current state is
+ * reflected in the item so the label does not change between the two.
+ */
+export const togglePinDocumentToHome = createAction({
+  name: ({ t }) => t("Pin to home"),
+  analyticsName: "Toggle pin document to home",
+  section: ActiveDocumentSection,
+  icon: <PinIcon />,
+  iconInContextMenu: false,
+  selected: ({ activeDocumentId, stores }) =>
+    !!activeDocumentId &&
+    !!stores.documents.get(activeDocumentId)?.pinnedToHome,
+  visible: ({ activeDocumentId, currentTeamId, stores }) =>
+    !!currentTeamId &&
+    !!activeDocumentId &&
+    !!stores.policies.abilities(activeDocumentId).pinToHome,
+  perform: async (context) => {
+    const { activeDocumentId, location, t, stores } = context;
+    if (!activeDocumentId) {
+      return;
+    }
+    const document = stores.documents.get(activeDocumentId);
+
+    if (!document?.pinnedToHome) {
+      await pinDocumentToHome.perform(context);
+      return;
+    }
+
+    await document.unpin();
+
+    if (location.pathname !== homePath()) {
+      toast.success(t("Unpinned"));
+    }
+  },
+});
+
+export const pinDocument = createActionWithChildren({
+  name: ({ t }) => t("Pin"),
+  analyticsName: "Pin document",
+  section: ActiveDocumentSection,
+  icon: <PinIcon />,
+  children: [togglePinDocumentToCollection, togglePinDocumentToHome],
 });
 
 export const searchInDocument = createInternalLinkAction({
@@ -1073,6 +1164,7 @@ export const printDocument = createAction({
   name: ({ t, isMenu }) => (isMenu ? t("Print") : t("Print document")),
   analyticsName: "Print document",
   section: ActiveDocumentSection,
+  shortcut: ["Meta+P"],
   icon: <PrintIcon />,
   iconInContextMenu: false,
   visible: ({ activeDocumentId }) => !!(activeDocumentId && window.print),
@@ -1287,7 +1379,8 @@ export const searchDocumentsForQueryActionFactory = (query: string) =>
     priority: -1,
     icon: <SearchIcon />,
     to: searchPath({ query }),
-    visible: ({ location }) => location.pathname !== searchPath(),
+    visible: ({ location, isMCP }) =>
+      !isMCP && location.pathname !== searchPath(),
   });
 
 export const moveDocumentToCollection = createAction({
@@ -1372,10 +1465,11 @@ export const archiveDocument = createAction({
           })
         ),
       content: (
-        <ConfirmationDialog
-          onSubmit={async () => {
+        <DocumentArchiveDialog
+          count={documents.length}
+          onSubmit={async (reason) => {
             const succeeded = await performBatch(documents, (document) =>
-              document.archive()
+              document.archive({ reason })
             );
             if (succeeded) {
               toast.success(
@@ -1385,16 +1479,7 @@ export const archiveDocument = createAction({
               );
             }
           }}
-          savingText={`${t("Archiving")}…`}
-        >
-          {documents.length === 1
-            ? t(
-                "Archiving this document will remove it from the collection and search results."
-              )
-            : t(
-                "Archiving these documents will remove them from their collections and search results."
-              )}
-        </ConfirmationDialog>
+        />
       ),
     });
   },
@@ -1720,6 +1805,75 @@ export const toggleDocumentStats = createAction({
   },
 });
 
+/** An example of the numbering each style produces, used to aid search. */
+const headingPrefixExamples: Record<HeadingPrefixStyle, string> = {
+  [HeadingPrefixStyle.None]: "",
+  [HeadingPrefixStyle.Numeric]: "1.1.1",
+  [HeadingPrefixStyle.Alphanumeric]: "1.a.i",
+  [HeadingPrefixStyle.Outline]: "I.A.1",
+};
+
+const headingPrefixNames: Record<HeadingPrefixStyle, (t: TFunction) => string> =
+  {
+    [HeadingPrefixStyle.None]: (t) => t("None"),
+    [HeadingPrefixStyle.Numeric]: (t) => t("Multi-level decimal"),
+    [HeadingPrefixStyle.Alphanumeric]: (t) => t("Alphanumeric"),
+    [HeadingPrefixStyle.Outline]: (t) => t("Harvard"),
+  };
+
+const changeHeadingPrefixFactory = (style: HeadingPrefixStyle) =>
+  createAction({
+    name: ({ t }) => headingPrefixNames[style](t),
+    // The example is displayed in the shortcut slot of menu items, but must
+    // not be set on the command bar action where shortcuts are registered as
+    // key sequences.
+    shortcut: ({ isMenu }) =>
+      isMenu && headingPrefixExamples[style]
+        ? [headingPrefixExamples[style]]
+        : undefined,
+    keywords: headingPrefixExamples[style],
+    analyticsName: "Change heading numbering",
+    section: ActiveDocumentSection,
+    selected: ({ activeDocumentId, stores }) => {
+      const document = activeDocumentId
+        ? stores.documents.get(activeDocumentId)
+        : undefined;
+      return (
+        (document?.getPreference(DocumentPreference.HeadingPrefix) ??
+          HeadingPrefixStyle.None) === style
+      );
+    },
+    perform: async ({ activeDocumentId, stores }) => {
+      const document = activeDocumentId
+        ? stores.documents.get(activeDocumentId)
+        : undefined;
+      if (!document) {
+        return;
+      }
+      document.setPreference(DocumentPreference.HeadingPrefix, style);
+      await document.save();
+    },
+  });
+
+export const changeHeadingPrefix = createActionWithChildren({
+  name: ({ t }) => t("Heading numbering"),
+  analyticsName: "Change heading numbering",
+  section: ActiveDocumentSection,
+  icon: <OrderedListIcon />,
+  visible: ({ activeDocumentId, stores }) => {
+    const document = activeDocumentId
+      ? stores.documents.get(activeDocumentId)
+      : undefined;
+
+    return (
+      !!document &&
+      !document.isDeleted &&
+      stores.policies.abilities(document.id).update
+    );
+  },
+  children: Object.values(HeadingPrefixStyle).map(changeHeadingPrefixFactory),
+});
+
 export const leaveDocument = createAction({
   name: ({ t }) => t("Leave document"),
   analyticsName: "Leave document",
@@ -1820,4 +1974,5 @@ export const rootDocumentActions = [
   openDocumentInSplit,
   shareDocument,
   toggleDocumentStats,
+  changeHeadingPrefix,
 ];

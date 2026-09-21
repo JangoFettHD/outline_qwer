@@ -61,7 +61,7 @@ export default ({ mode }: ConfigEnv) =>
         registerType: "autoUpdate",
         workbox: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-          globPatterns: ["**/*.{js,css,ico,png,svg}"],
+          globPatterns: ["**/*.{css,ico,png,svg}"],
           navigateFallback: null,
           modifyURLPrefix: {
             "": `${environment.CDN_URL ?? ""}/static/`,
@@ -70,6 +70,24 @@ export default ({ mode }: ConfigEnv) =>
           clientsClaim: true,
           cleanupOutdatedCaches: true,
           runtimeCaching: [
+            {
+              // Chunks are content-hashed and immutable, so cache them on
+              // first use rather than precaching the entire build.
+              urlPattern: ({ url }) =>
+                url.pathname.startsWith("/static/assets/") &&
+                url.pathname.endsWith(".js"),
+              handler: "CacheFirst",
+              options: {
+                cacheName: "js-cache",
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 2592000, // 30 days
+                },
+                cacheableResponse: {
+                  statuses: [200],
+                },
+              },
+            },
             {
               urlPattern: /api\/urls\.unfurl$/,
               handler: "CacheOnly",
@@ -85,7 +103,13 @@ export default ({ mode }: ConfigEnv) =>
               },
             },
             {
-              urlPattern: /api\/files\.get/,
+              // Limited to images, as media and PDFs are loaded with byte range
+              // requests which Safari cannot play back when the response is
+              // served by a service worker.
+              urlPattern: ({ url, request }) =>
+                url.pathname.endsWith("/api/files.get") &&
+                request.destination === "image" &&
+                !request.headers.has("range"),
               handler: "CacheFirst",
               options: {
                 cacheName: "files-cache",
@@ -94,9 +118,8 @@ export default ({ mode }: ConfigEnv) =>
                   maxAgeSeconds: 604800, // 7 days
                 },
                 cacheableResponse: {
-                  statuses: [0, 200, 206], // Include partial content for range requests
+                  statuses: [200],
                 },
-                rangeRequests: true, // Allow range requests for partial content
               },
             },
           ],
@@ -211,7 +234,7 @@ export default ({ mode }: ConfigEnv) =>
               },
               {
                 name: "vendor-collab",
-                test: /node_modules[\\/](yjs|y-prosemirror|y-indexeddb|@hocuspocus|lib0)/,
+                test: /node_modules[\\/](yjs|y-prosemirror|@hocuspocus|lib0)/,
                 priority: 20,
               },
               {

@@ -46,22 +46,7 @@ export function createAction(
     ...definition,
     type: "action",
     variant: "action",
-    perform: definition.perform
-      ? (context) => {
-          // We must use the specific analytics name here as the action name is
-          // translated and potentially contains user strings.
-          if (definition.analyticsName) {
-            Analytics.track("perform_action", definition.analyticsName, {
-              context: context.isButton
-                ? "button"
-                : context.isCommandBar
-                  ? "commandbar"
-                  : "contextmenu",
-            });
-          }
-          return definition.perform(context);
-        }
-      : () => {},
+    perform: definition.perform ?? (() => {}),
     id: definition.id ?? uuidv4(),
   };
 }
@@ -166,6 +151,7 @@ export function actionToMenuItem(
       const title = resolve<string>(action.name, context);
       const visible = resolve<boolean>(action.visible, context) ?? true;
       const disabled = resolve<boolean>(action.disabled, context);
+      const shortcut = resolve<string[] | undefined>(action.shortcut, context);
       const icon =
         !!action.icon && action.iconInContextMenu !== false
           ? resolve<React.ReactNode>(action.icon, context)
@@ -179,10 +165,10 @@ export function actionToMenuItem(
             icon,
             visible,
             disabled,
-            tooltip: resolve<React.ReactChild>(action.tooltip, context),
+            tooltip: resolve<React.ReactNode>(action.tooltip, context),
             selected: resolve<boolean>(action.selected, context),
             dangerous: action.dangerous,
-            shortcut: action.shortcut,
+            shortcut,
             onClick: () => performAction(action, context),
           };
 
@@ -194,7 +180,7 @@ export function actionToMenuItem(
             icon,
             visible,
             disabled,
-            shortcut: action.shortcut,
+            shortcut,
             to,
           };
         }
@@ -206,7 +192,7 @@ export function actionToMenuItem(
             icon,
             visible,
             disabled,
-            shortcut: action.shortcut,
+            shortcut,
             href: action.target
               ? { url: action.url, target: action.target }
               : action.url,
@@ -261,6 +247,7 @@ export function actionToKBar(
   }
 
   const name = resolve<string>(action.name, context);
+  const shortcut = resolve<string[] | undefined>(action.shortcut, context);
   const icon = resolve<React.ReactElement>(action.icon, context);
   const badge = resolve<React.ReactNode>(action.badge, context);
   const section = resolve<string>(action.section, context);
@@ -294,7 +281,7 @@ export function actionToKBar(
           name,
           section: sectionWithPriority,
           keywords: action.keywords,
-          shortcut: action.shortcut,
+          shortcut,
           subtitle,
           icon,
           badge,
@@ -320,7 +307,7 @@ export function actionToKBar(
           name,
           section: sectionWithPriority,
           keywords: action.keywords,
-          shortcut: action.shortcut,
+          shortcut,
           icon,
           badge,
           subtitle,
@@ -349,10 +336,28 @@ export async function performAction(
         ? () => history.push(resolve<LocationDescriptor>(action.to, context))
         : () => window.open(action.url, action.target);
 
+  // We must use the specific analytics name here as the action name is
+  // translated and potentially contains user strings.
+  if (action.analyticsName) {
+    Analytics.track("perform_action", action.analyticsName, {
+      context: context.isButton
+        ? "button"
+        : context.isCommandBar
+          ? "commandbar"
+          : context.isMCP
+            ? "webmcp"
+            : "contextmenu",
+    });
+  }
+
   const result = perform();
 
   if (result instanceof Promise) {
     return result.catch((err: Error) => {
+      // WebMCP callers surface errors to the agent instead of a toast.
+      if (context.isMCP) {
+        throw err;
+      }
       toast.error(err.message);
     });
   }

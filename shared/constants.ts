@@ -1,6 +1,12 @@
-import type { TeamPreferences, UserPreferences } from "./types";
+import type {
+  DocumentPreferences,
+  TeamPreferences,
+  UserPreferences,
+} from "./types";
 import {
   TOCPosition,
+  DocumentPreference,
+  HeadingPrefixStyle,
   TeamPreference,
   UserPreference,
   EmailDisplay,
@@ -99,6 +105,10 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.Bitrix24MentionNotifications]: true,
   [TeamPreference.ZpqwerPortalUrl]: undefined,
   [TeamPreference.ShowZpqwerButton]: false,
+};
+
+export const DocumentPreferenceDefaults: DocumentPreferences = {
+  [DocumentPreference.HeadingPrefix]: HeadingPrefixStyle.None,
 };
 
 export const UserPreferenceDefaults: UserPreferences = {

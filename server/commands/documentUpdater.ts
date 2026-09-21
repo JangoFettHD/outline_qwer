@@ -1,5 +1,5 @@
-import type { TextEditMode } from "@shared/types";
-import { DocumentConflictError } from "@server/errors";
+import type { DocumentPreferences, TextEditMode } from "@shared/types";
+import { DocumentConflictError, ValidationError } from "@server/errors";
 import { Event, Document } from "@server/models";
 import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
 import { TextHelper } from "@server/models/helpers/TextHelper";
@@ -24,6 +24,8 @@ type Props = {
   templateId?: string | null;
   /** If the document should be displayed full-width on the screen */
   fullWidth?: boolean;
+  /** Display preferences for the document, merged with existing values */
+  preferences?: DocumentPreferences | null;
   /** Whether insights should be visible on the document */
   insightsEnabled?: boolean;
   /** The edit mode: "replace", "append", "prepend", or "patch" */
@@ -36,6 +38,8 @@ type Props = {
   publish?: boolean;
   /** The ID of the collection to publish the document to */
   collectionId?: string | null;
+  /** The reason the document is archived or deleted. */
+  deprecatedReason?: string | null;
 };
 
 /**
@@ -56,12 +60,14 @@ export default async function documentUpdater(
     editorVersion,
     templateId,
     fullWidth,
+    preferences,
     insightsEnabled,
     editMode,
     findText,
     lastRevision,
     publish,
     collectionId,
+    deprecatedReason,
     done,
   }: Props
 ): Promise<Document> {
@@ -86,6 +92,12 @@ export default async function documentUpdater(
   }
   if (fullWidth !== undefined) {
     document.fullWidth = fullWidth;
+  }
+  if (preferences) {
+    document.preferences = {
+      ...document.preferences,
+      ...preferences,
+    };
   }
   if (insightsEnabled !== undefined) {
     document.insightsEnabled = insightsEnabled;
@@ -120,6 +132,20 @@ export default async function documentUpdater(
     if (!locked && lastRevision !== undefined) {
       throw DocumentConflictError();
     }
+  }
+
+  if (deprecatedReason !== undefined) {
+    // Reload under the lock so a concurrent restore cannot leave a stale note.
+    await document.reload({ transaction, paranoid: false });
+    if (document.isActive) {
+      throw ValidationError("The document must be archived or deleted");
+    }
+    document.deprecatedReason = deprecatedReason?.trim() || null;
+    // Keep the archive attribution and time shown in the banner unchanged.
+    if (document.changed("deprecatedReason")) {
+      await document.saveWithCtx(ctx, { silent: true });
+    }
+    return document;
   }
 
   const changed = document.changed();

@@ -570,15 +570,10 @@ router.post(
       ],
     };
 
-    // The deleting user is currently recorded as the last to modify the
-    // document, so the public `deletedById` field maps onto that column.
     const filter = combineFilters(rawFilters);
     if (filter) {
       await authorizeFilterFields(user, filter);
-      const mapped = mapFilterFields(filter, {
-        deletedById: "lastModifiedById",
-      });
-      where[Op.and].push(buildWhere<Document>(mapped));
+      where[Op.and].push(buildWhere<Document>(filter));
     }
 
     const documents = await Document.scope([
@@ -797,7 +792,10 @@ router.post(
     const { id, startDate, endDate } = ctx.input.body;
     const { user } = ctx.state.auth;
 
-    const document = await Document.findByPk(id, { userId: user.id });
+    const document = await Document.findByPk(id, {
+      userId: user.id,
+      includeContent: false,
+    });
     authorize(user, "listViews", document);
 
     if (!document.insightsEnabled) {
@@ -834,6 +832,7 @@ router.post(
     const actor = ctx.state.auth.user;
     const document = await Document.findByPk(id, {
       userId: actor.id,
+      includeContent: false,
     });
     authorize(actor, "read", document);
 
@@ -916,7 +915,10 @@ router.post(
   async (ctx: APIContext<T.DocumentsChildrenReq>) => {
     const { id } = ctx.input.body;
     const { user } = ctx.state.auth;
-    const document = await Document.findByPk(id, { userId: user.id });
+    const document = await Document.findByPk(id, {
+      userId: user.id,
+      includeContent: false,
+    });
 
     authorize(user, "read", document);
 
@@ -1459,6 +1461,11 @@ router.post(
     const { transaction } = ctx.state;
     const { id, insightsEnabled, publish, collectionId, ...input } =
       ctx.input.body;
+    const updatingDeprecatedReason =
+      input.deprecatedReason !== undefined &&
+      Object.keys(ctx.input.body).every(
+        (key) => key === "id" || key === "deprecatedReason"
+      );
     const editorVersion = ctx.headers["x-editor-version"] as string | undefined;
 
     const { user } = ctx.state.auth;
@@ -1467,10 +1474,19 @@ router.post(
     let document = await Document.findByPk(id, {
       userId: user.id,
       includeState: true,
+      paranoid: !updatingDeprecatedReason,
       transaction,
     });
     collection = document?.collection;
-    authorize(user, "update", document);
+    authorize(
+      user,
+      updatingDeprecatedReason ? "updateDeprecatedReason" : "update",
+      document
+    );
+
+    if (!updatingDeprecatedReason && input.deprecatedReason !== undefined) {
+      authorize(user, "updateDeprecatedReason", document);
+    }
 
     if (collection && insightsEnabled !== undefined) {
       authorize(user, "updateInsights", document);
@@ -1637,7 +1653,7 @@ router.post(
   validate(T.DocumentsArchiveSchema),
   transaction(),
   async (ctx: APIContext<T.DocumentsArchiveReq>) => {
-    const { id } = ctx.input.body;
+    const { id, reason } = ctx.input.body;
     const { user } = ctx.state.auth;
     const { transaction } = ctx.state;
 
@@ -1647,6 +1663,10 @@ router.post(
       transaction,
     });
     authorize(user, "archive", document);
+
+    if (reason !== undefined) {
+      document.deprecatedReason = reason || null;
+    }
 
     await document.archiveWithCtx(ctx);
 
@@ -1665,7 +1685,7 @@ router.post(
   transaction(),
   async (ctx: APIContext<T.DocumentsDeleteReq>) => {
     const { transaction } = ctx.state;
-    const { id, permanent } = ctx.input.body;
+    const { id, permanent, reason } = ctx.input.body;
     const { user } = ctx.state.auth;
 
     if (permanent) {
@@ -1692,6 +1712,10 @@ router.post(
       });
 
       authorize(user, "delete", document);
+
+      if (reason !== undefined) {
+        document.deprecatedReason = reason || null;
+      }
 
       await document.destroyWithCtx(ctx);
     }
@@ -1820,6 +1844,7 @@ router.post(
       collectionId,
       parentDocumentId,
       fullWidth,
+      preferences,
       templateId,
       createdAt,
     } = ctx.input.body;
@@ -1865,6 +1890,7 @@ router.post(
       parentDocumentId,
       template,
       fullWidth,
+      preferences,
       editorVersion,
     });
 
