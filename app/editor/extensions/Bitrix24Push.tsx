@@ -106,10 +106,17 @@ function convertChecklist(
     if (child.type.name === "checkbox_item") {
       const text = child.textContent.trim();
       if (text) {
-        const innerFrom = list.pos + offset + 1; // +1 for the wrapper node
+        // `offset` is relative to the list's content, so the item's opening
+        // token sits at `list.pos + offset + 1`. Inline text starts two
+        // further in — past the checkbox_item token and past the paragraph
+        // token — and ends two before the item's end, so both tokens survive
+        // the replacement. Using innerFrom for the end left the last two
+        // characters of every URL outside the link mark.
+        const itemStart = list.pos + offset + 1;
+        const innerFrom = itemStart + 2;
         items.push({
           from: innerFrom,
-          to: innerFrom + child.content.size,
+          to: itemStart + child.nodeSize - 2,
           text,
         });
       }

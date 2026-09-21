@@ -137,11 +137,20 @@ function Bitrix24Menu({ search, isActive, ...rest }: Props) {
           // correct entity. onClick is invoked by SuggestionsMenu AFTER
           // handleClearSearch has stripped the `:b query` trigger text.
           const url = h.url;
+          // SuggestionsMenu sorts rows by [section, priority, score]. Our
+          // section labels carry no priority, so once a query exists every
+          // row ties on the first two keys and the fuzzy score alone decides
+          // the order — which interleaves rows from different sections and
+          // makes the renderer emit the same header again (it only compares
+          // against the previous row). A strictly descending per-item
+          // priority settles the sort before it reaches the score, keeping
+          // the server's grouping and order.
           collected.push({
             name: "noop",
             title: h.title,
             subtitle: h.subtitle,
             section,
+            priority: -collected.length,
             url,
             onClick: () => insertUrlAsLink(view, url),
             attrs: { id: h.id, type: h.type, url },

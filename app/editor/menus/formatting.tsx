@@ -23,6 +23,8 @@ import {
   CollapseIcon,
 } from "outline-icons";
 import { v4 as uuidv4 } from "uuid";
+import styled from "styled-components";
+import Image from "@shared/editor/components/Img";
 import CellBackgroundColorPicker from "../components/CellBackgroundColorPicker";
 import HighlightColorPicker from "../components/HighlightColorPicker";
 
@@ -52,6 +54,15 @@ import type { CellSelection } from "prosemirror-tables";
 import TableCell from "@shared/editor/nodes/TableCell";
 import Highlight from "@shared/editor/marks/Highlight";
 import { DottedCircleIcon } from "~/components/Icons/DottedCircleIcon";
+
+/** Bitrix24 brand mark, sized for a toolbar button. */
+const Bitrix24Img = styled(Image)`
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #fff;
+  width: 18px;
+  height: 18px;
+`;
 
 /**
  * Returns menu items for the default formatting selection toolbar.
@@ -489,6 +500,16 @@ export default function formattingMenuItems(ctx: SelectionContext): MenuItem[] {
         { resolved: false },
         { exact: true }
       ),
+    },
+    {
+      // Belongs on the selection toolbar, not the block menu: this command
+      // reads the selected text, and opening the block menu collapses the
+      // selection before its items run, so there it could never see one.
+      name: "bitrix24CreateTaskFromSelection",
+      group: MenuItemGroup.inline,
+      tooltip: t("Create Bitrix24 task"),
+      icon: <Bitrix24Img src="/images/link.png" alt="Bitrix24" />,
+      visible: canFormat,
     },
     {
       name: "separator",

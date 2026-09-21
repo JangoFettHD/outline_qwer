@@ -1,4 +1,4 @@
-import { action } from "mobx";
+import { action, runInAction } from "mobx";
 import type { EditorState, Transaction } from "prosemirror-state";
 import type { WidgetProps } from "@shared/editor/lib/Extension";
 import Suggestion from "~/editor/extensions/Suggestion";
@@ -34,15 +34,26 @@ export default class Bitrix24MenuExtension extends Suggestion {
   }
 
   /**
-   * Editor command surface. `bitrix24Picker` inserts the trigger text
-   * (`:b `) at the caret — used by the slash block menu entry. The
-   * Suggestion base class's InputRule then fires on the newly-inserted
-   * text and opens the picker exactly as if the user had typed `:b`.
+   * Editor command surface. `bitrix24Picker` opens the entity picker and is
+   * wired to the `/Bitrix24` entry in the slash block menu.
    *
-   * This approach (insert trigger text vs. flip `state.open` directly) is
-   * what lets users keep typing to refine the query after `/Bitrix24` —
-   * each subsequent character is captured by openRegex and pushed through
-   * to `Bitrix24Menu` as `props.search`, so the popover updates live.
+   * It inserts the trigger at the caret and then opens the suggestion state
+   * directly. Both details matter. ProseMirror input rules only run from
+   * `handleTextInput`, which a programmatic dispatch never reaches, so the
+   * base class cannot open the menu for us — previously this command just
+   * left a literal `:b ` in the document. And the trigger is inserted with
+   * no trailing space because `openRegex` anchors the search term to a
+   * non-space character, so a space would stop every later keystroke from
+   * matching.
+   *
+   * The trigger stays in the document on purpose: it is what lets the user
+   * keep typing to refine the query, and what `handleClearSearch` later
+   * strips before the chosen entity is inserted.
+   *
+   * @param state current editor state, supplied by the extension manager.
+   * @param dispatch transaction dispatcher; absent when the command is only
+   *   being probed for availability.
+   * @returns always true — the picker can open from any text position.
    */
   commands() {
     return {
@@ -52,9 +63,26 @@ export default class Bitrix24MenuExtension extends Suggestion {
           state: EditorState,
           dispatch?: (tr: Transaction) => void
         ): boolean => {
-          if (dispatch) {
-            dispatch(state.tr.insertText(":b "));
+          if (!dispatch) {
+            return true;
           }
+
+          const [trigger] = Array.isArray(this.options.trigger)
+            ? this.options.trigger
+            : [this.options.trigger];
+          const triggerPos = state.selection.from;
+
+          // Insert first: the plugin decorates the trigger range in reaction
+          // to the state change below, so that range has to exist by then.
+          dispatch(state.tr.insertText(trigger));
+
+          runInAction(() => {
+            this.state.query = "";
+            this.state.trigger = trigger;
+            this.state.triggerPos = triggerPos;
+            this.state.open = true;
+          });
+
           return true;
         },
     };
