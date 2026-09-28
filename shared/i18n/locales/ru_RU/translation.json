@@ -2126,5 +2126,10 @@
   "{{ count }} document": "{{ count }} документ",
   "{{ count }} document_0": "{{ count }} документ",
   "{{ count }} document_1": "{{ count }} документа",
-  "{{ count }} document_2": "{{ count }} документов"
+  "{{ count }} document_2": "{{ count }} документов",
+  "Set up group sync": "Настроить синхронизацию групп",
+  "Could not connect group sync": "Не удалось подключить синхронизацию групп",
+  "An administrator of {{ authProvider }} must approve group access for this workspace": "Администратор {{ authProvider }} должен разрешить доступ к группам для этого пространства",
+  "Group sync connected": "Синхронизация групп подключена",
+  "This group is managed by an external authentication provider. The name and description are synced automatically and cannot be changed.": "Этой группой управляет внешний провайдер аутентификации. Название и описание синхронизируются автоматически и не редактируются."
 }

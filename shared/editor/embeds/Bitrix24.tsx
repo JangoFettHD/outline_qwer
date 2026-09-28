@@ -6,7 +6,6 @@ import Flex from "../../components/Flex";
 import Spinner from "../../components/Spinner";
 import Squircle from "../../components/Squircle";
 import Text from "../../components/Text";
-import useIsMounted from "../../hooks/useIsMounted";
 import useStores from "../../hooks/useStores";
 import {
   UnfurlResourceType,
@@ -31,7 +30,6 @@ import type { EmbedProps as Props } from ".";
  */
 const Bitrix24Embed = observer(function Bitrix24Embed(props: Props) {
   const { unfurls } = useStores();
-  const isMounted = useIsMounted();
   const [loaded, setLoaded] = React.useState(false);
   const url = props.attrs.href;
   const unfurl = unfurls.get(url)?.data;
@@ -39,14 +37,14 @@ const Bitrix24Embed = observer(function Bitrix24Embed(props: Props) {
   React.useEffect(() => {
     let cancelled = false;
     void unfurls.fetchUnfurl({ url }).finally(() => {
-      if (!cancelled && isMounted()) {
+      if (!cancelled) {
         setLoaded(true);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [unfurls, url, isMounted]);
+  }, [unfurls, url]);
 
   // The card is wrapped in an anchor so it acts like a clickable link.
   const Wrap: React.FC<{ children: React.ReactNode }> = ({ children }) => (

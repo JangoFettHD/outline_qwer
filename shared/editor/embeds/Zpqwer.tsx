@@ -4,7 +4,6 @@ import styled from "styled-components";
 import Flex from "../../components/Flex";
 import Spinner from "../../components/Spinner";
 import Squircle from "../../components/Squircle";
-import useIsMounted from "../../hooks/useIsMounted";
 import useStores from "../../hooks/useStores";
 import { UnfurlResourceType } from "../../types";
 import type { EmbedProps as Props } from ".";
@@ -61,7 +60,6 @@ function isZpqwerUnfurl(data: unknown): data is ZpqwerUnfurl {
  */
 const ZpqwerEmbed = observer(function ZpqwerEmbed(props: Props) {
   const { unfurls } = useStores();
-  const isMounted = useIsMounted();
   const [loaded, setLoaded] = React.useState(false);
   const url = props.attrs.href;
   const raw = unfurls.get(url)?.data;
@@ -72,14 +70,14 @@ const ZpqwerEmbed = observer(function ZpqwerEmbed(props: Props) {
     let cancelled = false;
     setLoaded(false);
     void unfurls.fetchUnfurl({ url }).finally(() => {
-      if (!cancelled && isMounted()) {
+      if (!cancelled) {
         setLoaded(true);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [unfurls, url, isMounted]);
+  }, [unfurls, url]);
 
   if (!data) {
     return (
